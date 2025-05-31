@@ -126,10 +126,12 @@ function StatementsContent() {
     } else {
       console.log('Expenses data:', expensesResponse.data)
       // Sort expenses by date after fetching
-      const sortedExpenses = (expensesResponse.data as unknown as ExpenseAllocation[]).sort((a, b) => {
-        if (!a.expenses?.expense_date || !b.expenses?.expense_date) return 0
-        return a.expenses.expense_date.localeCompare(b.expenses.expense_date)
-      })
+      const sortedExpenses = (expensesResponse.data as unknown as { allocated_amount: number; expenses: Expense; party_id: string }[])
+        .filter(expense => expense.expenses !== null)
+        .sort((a, b) => {
+          if (!a.expenses?.expense_date || !b.expenses?.expense_date) return 0
+          return a.expenses.expense_date.localeCompare(b.expenses.expense_date)
+        })
       setRawExpenses(sortedExpenses)
     }
 
