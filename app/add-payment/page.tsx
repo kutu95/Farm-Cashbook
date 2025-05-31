@@ -99,7 +99,18 @@ export default function AddPaymentPage() {
           </select>
         </div>
 
-        <button className="bg-blue-600 text-white px-4 py-2 rounded">Save Payment</button>
+        <div className="flex gap-4">
+          <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+            Save Payment
+          </button>
+          <button
+            type="button"
+            onClick={() => window.history.back()}
+            className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600"
+          >
+            Cancel
+          </button>
+        </div>
       </form>
     </div>
   )
