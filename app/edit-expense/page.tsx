@@ -1,11 +1,11 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import supabase from "@/lib/supabaseClient"
 import Header from "@/components/Header"
 
-export default function EditExpensePage() {
+function EditExpenseContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const expenseId = searchParams.get("id")
@@ -113,7 +113,6 @@ export default function EditExpensePage() {
       {error && <p className="text-red-600">{error}</p>}
 
       <form onSubmit={handleSubmit} className="space-y-4">
-
         <div>
           <label>Amount:</label>
           <input className="border p-2 w-full" type="number" value={amount} onChange={(e) => setAmount(e.target.value)} required />
@@ -156,5 +155,13 @@ export default function EditExpensePage() {
         <button className="bg-blue-600 text-white px-4 py-2 rounded">Save Changes</button>
       </form>
     </div>
+  )
+}
+
+export default function EditExpensePage() {
+  return (
+    <Suspense fallback={<div className="p-6"><Header /><div>Loading...</div></div>}>
+      <EditExpenseContent />
+    </Suspense>
   )
 }

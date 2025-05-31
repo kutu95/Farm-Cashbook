@@ -4,13 +4,43 @@ import { useEffect, useState } from "react"
 import supabase from "@/lib/supabaseClient"
 import Header from "@/components/Header"
 import { PlusCircle, DollarSign, Users, Shield, FileText } from "lucide-react"
+import Link from "next/link"
+import { useAuth } from "@/context/AuthContext"
 
 export default function DashboardPage() {
+  const { session } = useAuth()
   const [partyBalances, setPartyBalances] = useState<any[]>([])
+  const [isAdmin, setIsAdmin] = useState(false)
 
   useEffect(() => {
     loadBalances()
-  }, [])
+    if (session?.user) {
+      checkAdminStatus()
+    }
+  }, [session])
+
+  const checkAdminStatus = async () => {
+    if (!session?.user?.id) {
+      console.log('No user session')
+      return
+    }
+    
+    try {
+      const { data, error } = await supabase
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', session.user.id)
+        .single()
+
+      console.log('Admin check result:', { data, error })
+
+      if (!error && data) {
+        setIsAdmin(data.role === 'admin')
+      }
+    } catch (err) {
+      console.error('Error checking admin status:', err)
+    }
+  }
 
   const loadBalances = async () => {
     const { data: parties } = await supabase.from("parties").select("id, name")
@@ -30,6 +60,7 @@ export default function DashboardPage() {
       const totalExpenses = allocations?.reduce((sum, a) => sum + a.allocated_amount, 0) || 0
 
       balances.push({
+        id: party.id,
         name: party.name,
         balance: totalPayments - totalExpenses
       })
@@ -38,46 +69,67 @@ export default function DashboardPage() {
     setPartyBalances(balances)
   }
 
+  // Debug output
+  console.log('Current state:', { isAdmin, userId: session?.user?.id })
+
   return (
-    <div className="p-6">
+    <div className="p-6 max-w-[1200px] mx-auto">
       <Header />
       <h1 className="text-xl font-bold mb-4">Dashboard</h1>
 
-<table className="table-auto w-full border-collapse mb-6">
-  <thead>
-    <tr>
-      <th className="border px-2 py-1">Party</th>
-      <th className="border px-2 py-1 text-right">Balance</th>
-    </tr>
-  </thead>
-  <tbody>
-    {partyBalances.map((p, i) => (
-      <tr key={i}>
-        <td className="border px-2 py-1">{p.name}</td>
-        <td className="border px-2 py-1 text-right">
-          {p.balance.toLocaleString("en-AU", { style: "currency", currency: "AUD" })}
-        </td>
-      </tr>
-    ))}
-  </tbody>
-</table>
+      <table className="table-auto w-full border-collapse mb-6">
+        <thead>
+          <tr>
+            <th className="border px-2 py-1 text-left">Party</th>
+            <th className="border px-2 py-1 text-right">Balance</th>
+          </tr>
+        </thead>
+        <tbody>
+          {partyBalances.map((p, i) => (
+            <tr key={i}>
+              <td className="border px-2 py-1">
+                <Link 
+                  href={`/statements?party=${p.id}`}
+                  className="text-blue-600 hover:text-blue-800 hover:underline"
+                >
+                  {p.name}
+                </Link>
+              </td>
+              <td className={`border px-2 py-1 text-right ${p.balance < 0 ? 'text-red-600' : 'text-black'}`}>
+                {p.balance.toLocaleString("en-AU", { style: "currency", currency: "AUD" })}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
 
       <div className="flex flex-wrap gap-4">
-        <a href="/add-payment" className="flex items-center bg-blue-500 text-white px-4 py-2 rounded">
-          <DollarSign className="mr-2" /> Add Payment
-        </a>
-        <a href="/add-expense" className="flex items-center bg-green-500 text-white px-4 py-2 rounded">
-          <PlusCircle className="mr-2" /> Add Expense
-        </a>
-        <a href="/manage-parties" className="flex items-center bg-purple-500 text-white px-4 py-2 rounded">
-          <Users className="mr-2" /> Manage Parties
-        </a>
-        <a href="/manage-roles" className="flex items-center bg-yellow-500 text-white px-4 py-2 rounded">
-          <Shield className="mr-2" /> Manage Roles
-        </a>
-        <a href="/statements" className="flex items-center bg-gray-500 text-white px-4 py-2 rounded">
+        {/* Debug output */}
+        {session?.user && !isAdmin && (
+          <div className="text-sm text-gray-500">
+            Logged in but not admin. User ID: {session.user.id}
+          </div>
+        )}
+
+        {isAdmin && (
+          <>
+            <Link href="/add-payment" className="flex items-center bg-blue-500 text-white px-4 py-2 rounded">
+              <DollarSign className="mr-2" /> Add Payment
+            </Link>
+            <Link href="/add-expense" className="flex items-center bg-green-500 text-white px-4 py-2 rounded">
+              <PlusCircle className="mr-2" /> Add Expense
+            </Link>
+            <Link href="/manage-parties" className="flex items-center bg-purple-500 text-white px-4 py-2 rounded">
+              <Users className="mr-2" /> Manage Parties
+            </Link>
+            <Link href="/manage-roles" className="flex items-center bg-yellow-500 text-white px-4 py-2 rounded">
+              <Shield className="mr-2" /> Manage Roles
+            </Link>
+          </>
+        )}
+        <Link href="/statements" className="flex items-center bg-gray-500 text-white px-4 py-2 rounded">
           <FileText className="mr-2" /> Statements
-        </a>
+        </Link>
       </div>
     </div>
   )

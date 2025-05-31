@@ -1,4 +1,3 @@
-
 import { ReactNode } from 'react'
 import LogoutButton from './LogoutButton'
 import Link from 'next/link'
@@ -14,6 +13,7 @@ export default function DashboardShell({ children }: { children: ReactNode }) {
           <Link href="/payments">Payments</Link>
           <Link href="/parties">Parties</Link>
           <Link href="/statement">Statements</Link>
+          <Link href="/dashboard/profile">Profile</Link>
         </nav>
         <div style={{ marginTop: 'auto', paddingTop: '2rem' }}>
           <LogoutButton />
