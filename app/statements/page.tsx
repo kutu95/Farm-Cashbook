@@ -126,8 +126,8 @@ function StatementsContent() {
     } else {
       console.log('Expenses data:', expensesResponse.data)
       // Sort expenses by date after fetching
-      const sortedExpenses = expensesResponse.data.sort((a, b) => {
-        if (!a.expenses || !b.expenses) return 0
+      const sortedExpenses = (expensesResponse.data as unknown as ExpenseAllocation[]).sort((a, b) => {
+        if (!a.expenses?.expense_date || !b.expenses?.expense_date) return 0
         return a.expenses.expense_date.localeCompare(b.expenses.expense_date)
       })
       setRawExpenses(sortedExpenses)
