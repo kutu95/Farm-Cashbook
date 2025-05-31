@@ -35,6 +35,12 @@ interface Party {
   name: string
 }
 
+interface RawExpenseResponse {
+  allocated_amount: number
+  expense_id: Expense
+  party_id: string
+}
+
 function StatementsContent() {
   const { session, loading } = useAuth()
   const searchParams = useSearchParams()
@@ -104,7 +110,7 @@ function StatementsContent() {
         .from("expense_allocations")
         .select(`
           allocated_amount,
-          expenses:expense_id (
+          expense_id (
             id,
             description,
             expense_date,
@@ -125,13 +131,22 @@ function StatementsContent() {
       console.error('Expenses error:', expensesResponse.error)
     } else {
       console.log('Expenses data:', expensesResponse.data)
-      // Sort expenses by date after fetching
-      const sortedExpenses = (expensesResponse.data as unknown as { allocated_amount: number; expenses: Expense; party_id: string }[])
+      
+      // Transform the raw response into the expected format with proper type casting
+      const transformedExpenses = ((expensesResponse.data as unknown) as RawExpenseResponse[]).map(item => ({
+        allocated_amount: item.allocated_amount,
+        expenses: item.expense_id,
+        party_id: item.party_id
+      }))
+
+      // Sort the transformed expenses
+      const sortedExpenses = transformedExpenses
         .filter(expense => expense.expenses !== null)
         .sort((a, b) => {
           if (!a.expenses?.expense_date || !b.expenses?.expense_date) return 0
           return a.expenses.expense_date.localeCompare(b.expenses.expense_date)
         })
+      
       setRawExpenses(sortedExpenses)
     }
 
