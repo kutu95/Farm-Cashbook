@@ -37,7 +37,7 @@ export default function ProfilePage() {
       setError("")
       
       // Load profile data
-      const { data: profileData, error: profileError } = await supabase
+      let { data: profileData, error: profileError } = await supabase
         .from("profiles")
         .select("full_name")
         .eq("id", userId)
@@ -45,22 +45,36 @@ export default function ProfilePage() {
 
       if (profileError) {
         if (profileError.code === 'PGRST116') {
-          // Profile doesn't exist, create it
-          const { error: createError } = await supabase
+          // Profile doesn't exist, try to create it
+          const { data: newProfile, error: createError } = await supabase
             .from("profiles")
-            .insert({
+            .upsert({
               id: userId,
               full_name: "",
               updated_at: new Date().toISOString(),
             })
-          if (createError) throw createError
-          setFullName("")
+            .select()
+            .single()
+
+          if (createError) {
+            // If creation failed, try to fetch again in case it was created concurrently
+            const { data: retryData, error: retryError } = await supabase
+              .from("profiles")
+              .select("full_name")
+              .eq("id", userId)
+              .single()
+
+            if (retryError) throw retryError
+            profileData = retryData
+          } else {
+            profileData = newProfile
+          }
         } else {
           throw profileError
         }
-      } else {
-        setFullName(profileData?.full_name || "")
       }
+      
+      setFullName(profileData?.full_name || "")
 
       // Load user roles
       const { data: rolesData, error: rolesError } = await supabase
@@ -91,7 +105,7 @@ export default function ProfilePage() {
 
     } catch (error: any) {
       console.error("Error loading profile data:", error.message)
-      setError("Failed to load profile data")
+      setError("Failed to load profile data: " + error.message)
     } finally {
       setLoading(false)
     }
