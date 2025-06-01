@@ -12,6 +12,7 @@ export default function ProfilePage() {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState(false)
+  const [sendingStatements, setSendingStatements] = useState(false)
   const [fullName, setFullName] = useState("")
   const [error, setError] = useState("")
   const [message, setMessage] = useState("")
@@ -186,6 +187,28 @@ export default function ProfilePage() {
     }
   }
 
+  const sendStatementsOnDemand = async () => {
+    if (!user?.id) return
+
+    setSendingStatements(true)
+    setError("")
+    setMessage("")
+
+    try {
+      const { error } = await supabase
+        .rpc('send_statements_on_demand', {
+          p_user_id: user.id
+        })
+
+      if (error) throw error
+      setMessage("Statements have been sent to your email!")
+    } catch (error: any) {
+      setError(error.message)
+    } finally {
+      setSendingStatements(false)
+    }
+  }
+
   // Show loading state
   if (authLoading || loading) {
     return (
@@ -247,7 +270,18 @@ export default function ProfilePage() {
       </div>
 
       <div className="bg-white shadow rounded-lg p-6">
-        <h2 className="text-lg font-semibold mb-4">Monthly Statement Subscriptions</h2>
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-lg font-semibold">Monthly Statement Subscriptions</h2>
+          <button
+            onClick={sendStatementsOnDemand}
+            disabled={sendingStatements || subscribedParties.length === 0}
+            className={`bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 ${
+              (sendingStatements || subscribedParties.length === 0) ? "opacity-50 cursor-not-allowed" : ""
+            }`}
+          >
+            {sendingStatements ? "Sending..." : "Send Statements Now"}
+          </button>
+        </div>
         <p className="text-gray-600 mb-4">
           Select the parties you want to receive monthly statements for. You'll receive a single email at the end of each month containing statements for all selected parties.
         </p>
