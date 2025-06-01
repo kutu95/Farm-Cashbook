@@ -43,8 +43,24 @@ export default function ProfilePage() {
         .eq("id", userId)
         .single()
 
-      if (profileError) throw profileError
-      setFullName(profileData?.full_name || "")
+      if (profileError) {
+        if (profileError.code === 'PGRST116') {
+          // Profile doesn't exist, create it
+          const { error: createError } = await supabase
+            .from("profiles")
+            .insert({
+              id: userId,
+              full_name: "",
+              updated_at: new Date().toISOString(),
+            })
+          if (createError) throw createError
+          setFullName("")
+        } else {
+          throw profileError
+        }
+      } else {
+        setFullName(profileData?.full_name || "")
+      }
 
       // Load user roles
       const { data: rolesData, error: rolesError } = await supabase
