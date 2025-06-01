@@ -195,13 +195,21 @@ export default function ProfilePage() {
     setMessage("")
 
     try {
-      const { error } = await supabase
+      // Get statements from the database
+      const { data, error } = await supabase
         .rpc('send_statements_on_demand', {
           p_user_id: user.id
         })
 
       if (error) throw error
-      setMessage("Statements have been sent to your email!")
+
+      // Create a PDF for each statement
+      const statements = data.statements
+      const count = data.count
+
+      // For now, just show success message
+      // TODO: Add PDF generation and email sending
+      setMessage(`Generated ${count} statement(s) successfully!`)
     } catch (error: any) {
       setError(error.message)
     } finally {

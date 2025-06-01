@@ -1,6 +1,6 @@
 -- Function to send statements on demand for a specific user
 CREATE OR REPLACE FUNCTION public.send_statements_on_demand(p_user_id UUID)
-RETURNS void
+RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
@@ -11,6 +11,7 @@ DECLARE
     v_year_text TEXT;
     v_statements jsonb[];
     v_user_email TEXT;
+    v_result jsonb;
 BEGIN
     -- Get user's email
     SELECT email INTO v_user_email
@@ -39,29 +40,12 @@ BEGIN
         RAISE EXCEPTION 'No subscribed statements found';
     END IF;
 
-    -- Send email using Supabase's built-in email sending
-    PERFORM net.http_post(
-        url := 'https://api.supabase.com/v1/send-email',
-        headers := jsonb_build_object(
-            'Content-Type', 'application/json',
-            'Authorization', current_setting('app.settings.service_role_key')
-        ),
-        body := jsonb_build_object(
-            'to', v_user_email,
-            'from', 'john@streamtime.com.au',
-            'subject', 'Farm Statement(s) for ' || v_month_name || ' ' || v_year_text,
-            'text', 'Your requested farm statements are attached.',
-            'html', 'Your requested farm statements are attached.',
-            'attachments', (
-                SELECT jsonb_agg(
-                    jsonb_build_object(
-                        'filename', stmt->>'party_name' || ' - Statement ' || v_month_name || ' ' || v_year_text || '.pdf',
-                        'content', stmt
-                    )
-                )
-                FROM unnest(v_statements) stmt
-            )
-        )
+    -- Build the result
+    v_result := jsonb_build_object(
+        'statements', v_statements,
+        'count', array_length(v_statements, 1)
     );
+
+    RETURN v_result;
 END;
 $$; 
