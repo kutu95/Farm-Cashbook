@@ -96,6 +96,7 @@ export default function AddPaymentPage() {
             <option value="Bank deposit">Bank deposit</option>
             <option value="Payment to customer">Payment to customer</option>
             <option value="Credit transfer">Credit transfer</option>
+            <option value="Credit">Credit</option>
           </select>
         </div>
 
