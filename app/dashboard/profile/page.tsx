@@ -41,23 +41,27 @@ export default function ProfilePage() {
         .from("profiles")
         .select("full_name")
         .eq("id", userId)
-        .single()
+        .maybeSingle()
 
-      if (profileError) {
-        if (profileError.code === 'PGRST116') {
-          // Profile doesn't exist, try to create it
-          const { data: newProfile, error: createError } = await supabase
-            .from("profiles")
-            .upsert({
-              id: userId,
-              full_name: "",
-              updated_at: new Date().toISOString(),
-            })
-            .select()
-            .single()
+      if (profileError && profileError.code !== 'PGRST116') {
+        throw profileError
+      }
 
-          if (createError) {
-            // If creation failed, try to fetch again in case it was created concurrently
+      if (!profileData) {
+        // Profile doesn't exist, try to create it
+        const { data: newProfile, error: createError } = await supabase
+          .from("profiles")
+          .insert({
+            id: userId,
+            full_name: "",
+            updated_at: new Date().toISOString(),
+          })
+          .select()
+          .single()
+
+        if (createError) {
+          if (createError.code === '23505') { // Duplicate key error
+            // Profile was created by another process, try to fetch it again
             const { data: retryData, error: retryError } = await supabase
               .from("profiles")
               .select("full_name")
@@ -67,10 +71,10 @@ export default function ProfilePage() {
             if (retryError) throw retryError
             profileData = retryData
           } else {
-            profileData = newProfile
+            throw createError
           }
         } else {
-          throw profileError
+          profileData = newProfile
         }
       }
       
