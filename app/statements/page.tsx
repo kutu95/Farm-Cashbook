@@ -53,6 +53,7 @@ function StatementsContent() {
   const [error, setError] = useState("")
   const [isAdmin, setIsAdmin] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
+  const [sortAscending, setSortAscending] = useState(true)
 
   useEffect(() => { 
     if (!loading) {
@@ -207,8 +208,8 @@ function StatementsContent() {
         item.date,
         item.description,
         item.type,
-        item.amount.toFixed(2),
-        runningBalance.toFixed(2)
+        item.amount.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' }),
+        runningBalance.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' })
       ]
     })
     
@@ -253,13 +254,13 @@ function StatementsContent() {
           amount: payment.amount
         }))
     ]
-    .sort((a, b) => a.date.localeCompare(b.date))
+    .sort((a, b) => sortAscending ? a.date.localeCompare(b.date) : b.date.localeCompare(a.date))
     
     // Calculate running balance
     let runningBalance = 0
     transactions.forEach(item => {
       runningBalance += item.amount
-      csvContent += `${item.date},"${item.description}",${item.type},${item.amount.toFixed(2)},${runningBalance.toFixed(2)}\n`
+      csvContent += `${item.date},"${item.description}",${item.type},${item.amount.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' })},${runningBalance.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' })}\n`
     })
     
     // Create and trigger download
@@ -369,7 +370,18 @@ function StatementsContent() {
                 <table className="min-w-full">
                   <thead>
                     <tr>
-                      <th className="px-4 py-2 text-left">Date</th>
+                      <th className="px-4 py-2 text-left">
+                        <div className="flex items-center gap-2">
+                          Date
+                          <button
+                            onClick={() => setSortAscending(!sortAscending)}
+                            className="text-gray-500 hover:text-gray-700"
+                            title={sortAscending ? "Sort Descending" : "Sort Ascending"}
+                          >
+                            {sortAscending ? "↑" : "↓"}
+                          </button>
+                        </div>
+                      </th>
                       <th className="px-4 py-2 text-left">Description</th>
                       <th className="px-4 py-2 text-left">Type</th>
                       <th className="px-4 py-2 text-right">Amount</th>
@@ -409,7 +421,7 @@ function StatementsContent() {
                           isExpense: false
                         }))
                     ]
-                    .sort((a, b) => a.date.localeCompare(b.date))
+                    .sort((a, b) => sortAscending ? a.date.localeCompare(b.date) : b.date.localeCompare(a.date))
                     .reduce((acc, item, index) => {
                       const runningBalance = index === 0 
                         ? item.amount 
@@ -433,10 +445,10 @@ function StatementsContent() {
                         <td className="px-4 py-2">{item.description}</td>
                         <td className="px-4 py-2">{item.type}</td>
                         <td className={`px-4 py-2 text-right ${item.amount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          {item.amount.toFixed(2)}
+                          {item.amount.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' })}
                         </td>
                         <td className={`px-4 py-2 text-right ${item.runningBalance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          {item.runningBalance.toFixed(2)}
+                          {item.runningBalance.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' })}
                         </td>
                       </tr>
                     ))}
@@ -445,7 +457,7 @@ function StatementsContent() {
                     <tr className="border-t font-bold">
                       <td className="px-4 py-2" colSpan={3}>Final Balance</td>
                       <td className={`px-4 py-2 text-right ${balance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {balance.toFixed(2)}
+                        {balance.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' })}
                       </td>
                       <td></td>
                     </tr>
