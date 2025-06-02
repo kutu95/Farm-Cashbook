@@ -76,7 +76,7 @@ function InvitedSignupContent() {
         email,
         password,
         options: {
-          emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`
+          emailRedirectTo: `https://books.landlife.au/auth/callback`
         }
       })
 
