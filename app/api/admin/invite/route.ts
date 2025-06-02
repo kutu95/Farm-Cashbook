@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { createClient } from '@supabase/supabase-js'
 import { nanoid } from 'nanoid'
-import crypto from 'crypto'
 
 export const runtime = 'edge'
 
@@ -12,6 +11,11 @@ if (!resendApiKey) {
   console.error('RESEND_API_KEY is not set in environment variables')
 }
 const resend = resendApiKey ? new Resend(resendApiKey) : null
+
+// Function to generate UUID using Web Crypto API
+function generateUUID() {
+  return crypto.randomUUID()
+}
 
 export async function POST(request: Request) {
   try {
@@ -83,8 +87,8 @@ export async function POST(request: Request) {
       )
     }
 
-    // Generate a unique token for this invitation
-    const token = crypto.randomUUID()
+    // Generate a unique token for this invitation using Web Crypto API
+    const token = generateUUID()
     const expiresAt = new Date()
     expiresAt.setDate(expiresAt.getDate() + 7)
 
