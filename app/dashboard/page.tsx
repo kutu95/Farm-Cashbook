@@ -4,39 +4,41 @@ import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import supabase from "@/lib/supabaseClient"
 import Header from "@/components/Header"
-import { PlusCircle, DollarSign, Users, Shield, FileText, UserPlus } from "lucide-react"
+import { PlusCircle, DollarSign, Users, Shield, FileText } from "lucide-react"
 import Link from "next/link"
+import { useAuth } from "@/context/AuthContext"
 
 export default function DashboardPage() {
+  const { session } = useAuth()
   const router = useRouter()
   const [partyBalances, setPartyBalances] = useState<any[]>([])
   const [isAdmin, setIsAdmin] = useState(false)
-  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     loadBalances()
-    checkAdmin()
-  }, [router])
+    if (session?.user) {
+      checkAdminStatus()
+    }
+  }, [session])
 
-  const checkAdmin = async () => {
+  const checkAdminStatus = async () => {
+    if (!session?.user?.id) {
+      console.log('No user session')
+      return
+    }
+
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) {
-        router.push('/login')
-        return
-      }
-
-      const { data: roleData } = await supabase
+      const { data, error } = await supabase
         .from('user_roles')
         .select('role')
-        .eq('user_id', user.id)
+        .eq('user_id', session.user.id)
         .single()
 
-      setIsAdmin(roleData?.role === 'admin')
-      setLoading(false)
-    } catch (error) {
-      console.error('Error checking admin status:', error)
-      setLoading(false)
+      if (!error && data) {
+        setIsAdmin(data.role === 'admin')
+      }
+    } catch (err) {
+      console.error('Error checking admin status:', err)
     }
   }
 
@@ -65,30 +67,6 @@ export default function DashboardPage() {
     }
 
     setPartyBalances(balances)
-  }
-
-  if (loading) {
-    return <div>Loading...</div>
-  }
-
-  if (isAdmin) {
-    return (
-      <div className="p-4">
-        <h1 className="text-2xl font-bold mb-4">Admin Dashboard</h1>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <div className="bg-white p-6 rounded-lg shadow">
-            <h2 className="text-xl font-semibold mb-2">User Management</h2>
-            <button
-              onClick={() => router.push('/dashboard/admin/invite')}
-              className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
-            >
-              Invite User
-            </button>
-          </div>
-          {/* Add more admin features here */}
-        </div>
-      </div>
-    )
   }
 
   return (
@@ -136,6 +114,9 @@ export default function DashboardPage() {
             </Link>
             <Link href="/manage-roles" className="flex items-center bg-yellow-500 text-white px-4 py-2 rounded">
               <Shield className="mr-2" /> Manage Roles
+            </Link>
+            <Link href="/dashboard/admin/invite" className="flex items-center bg-indigo-500 text-white px-4 py-2 rounded">
+              <Users className="mr-2" /> Invite User
             </Link>
           </>
         )}
