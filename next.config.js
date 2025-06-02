@@ -10,11 +10,15 @@ const nextConfig = {
   webpack: (config, { isServer }) => {
     // Exclude Supabase Edge Functions from the build
     config.module.rules.push({
-      test: /supabase\/functions\/.+/,
+      test: /supabase.*functions.*\.ts$/,
       loader: 'ignore-loader',
     });
     return config;
   },
+  // Exclude Supabase Edge Functions from the build
+  pageExtensions: ['tsx', 'ts', 'jsx', 'js'].filter(ext => 
+    !ext.includes('supabase') && !ext.includes('functions')
+  ),
 }
 
 module.exports = nextConfig
