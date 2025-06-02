@@ -97,16 +97,22 @@ export default function InviteUserPage() {
         credentials: 'include'
       })
 
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        console.error('API Error:', {
+          status: response.status,
+          statusText: response.statusText,
+          errorData
+        })
+        throw new Error(errorData.error || errorData.details || 'Failed to send invitation')
+      }
+
       const data = await response.json()
       console.log('API Response:', { 
         status: response.status, 
         ok: response.ok,
         data 
       })
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to send invitation')
-      }
 
       setSuccess(true)
       setEmail('')

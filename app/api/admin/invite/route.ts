@@ -17,6 +17,23 @@ function generateUUID() {
   return crypto.randomUUID()
 }
 
+// Helper function to create a response with CORS headers
+function corsResponse(data: any, status = 200) {
+  return new NextResponse(JSON.stringify(data), {
+    status,
+    headers: {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    },
+  })
+}
+
+export async function OPTIONS() {
+  return corsResponse({})
+}
+
 export async function POST(request: Request) {
   try {
     console.log('=== API route called ===')
@@ -26,12 +43,12 @@ export async function POST(request: Request) {
     const userRole = request.headers.get('x-user-role')
     const authToken = request.headers.get('authorization')?.split('Bearer ')[1]
 
-    console.log('Auth check:', { userId, userRole })
+    console.log('Auth check:', { userId, userRole, hasAuthToken: !!authToken })
 
     if (!userId || userRole !== 'admin' || !authToken) {
-      return NextResponse.json(
+      return corsResponse(
         { error: 'Unauthorized - Admin access required' },
-        { status: 403 }
+        403
       )
     }
 
@@ -57,9 +74,10 @@ export async function POST(request: Request) {
     // Verify admin status directly
     const { data: { user }, error: userError } = await supabase.auth.getUser()
     if (userError || !user) {
-      return NextResponse.json(
+      console.error('Auth error:', userError)
+      return corsResponse(
         { error: 'Authentication failed' },
-        { status: 401 }
+        401
       )
     }
 
@@ -70,20 +88,22 @@ export async function POST(request: Request) {
       .single()
 
     if (roleError || !roleData || roleData.role !== 'admin') {
-      return NextResponse.json(
+      console.error('Role check error:', roleError)
+      return corsResponse(
         { error: 'Admin privileges required' },
-        { status: 403 }
+        403
       )
     }
 
-    const { email } = await request.json()
+    const body = await request.json()
+    const { email } = body
     console.log('Received email:', email)
     
     if (!email) {
       console.log('No email provided')
-      return NextResponse.json(
+      return corsResponse(
         { error: 'Email is required' },
-        { status: 400 }
+        400
       )
     }
 
@@ -106,9 +126,9 @@ export async function POST(request: Request) {
 
     if (inviteError) {
       console.error('Invitation Error:', inviteError)
-      return NextResponse.json(
+      return corsResponse(
         { error: 'Failed to create invitation' },
-        { status: 500 }
+        500
       )
     }
 
@@ -116,10 +136,10 @@ export async function POST(request: Request) {
 
     // Check if Resend is properly initialized
     if (!resend) {
-      console.error('Resend API key is not configured')
-      return NextResponse.json(
+      console.error('Resend API key:', process.env.RESEND_API_KEY ? 'Present' : 'Missing')
+      return corsResponse(
         { error: 'Email service is not configured' },
-        { status: 500 }
+        500
       )
     }
 
@@ -128,8 +148,13 @@ export async function POST(request: Request) {
     console.log('Signup URL generated:', signupUrl)
     
     try {
-      console.log('Attempting to send email via Resend')
-      await resend.emails.send({
+      console.log('Attempting to send email via Resend with config:', {
+        from: 'John <john@streamtime.com.au>',
+        to: email,
+        subject: 'Invitation to Farm Cashbook'
+      })
+
+      const emailResult = await resend.emails.send({
         from: 'John <john@streamtime.com.au>',
         to: email,
         subject: 'Invitation to Farm Cashbook',
@@ -143,23 +168,38 @@ export async function POST(request: Request) {
         `
       })
       
-      console.log('Email sent successfully')
-      return NextResponse.json({ 
+      console.log('Email send result:', emailResult)
+      return corsResponse({ 
         success: true, 
-        message: 'Invitation sent successfully'
+        message: 'Invitation sent successfully',
+        emailData: emailResult
       })
     } catch (emailError: any) {
-      console.error('Email Error:', emailError)
-      return NextResponse.json(
-        { error: 'Failed to send invitation email' },
-        { status: 500 }
+      console.error('Email Error:', {
+        error: emailError,
+        message: emailError.message,
+        name: emailError.name,
+        stack: emailError.stack,
+        code: emailError.code
+      })
+      return corsResponse(
+        { 
+          error: 'Failed to send invitation email',
+          details: emailError.message
+        },
+        500
       )
     }
   } catch (error: any) {
-    console.error('Request Error:', error)
-    return NextResponse.json(
+    console.error('Request Error:', {
+      error,
+      message: error.message,
+      name: error.name,
+      stack: error.stack
+    })
+    return corsResponse(
       { error: error.message },
-      { status: 400 }
+      400
     )
   }
 } 
