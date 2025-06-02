@@ -1,10 +1,10 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import supabase from "@/lib/supabaseClient"
 
-export default function InvitedSignUpPage() {
+function InvitedSignupContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [email, setEmail] = useState("")
@@ -13,9 +13,9 @@ export default function InvitedSignUpPage() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [validatingToken, setValidatingToken] = useState(true)
+  const token = searchParams.get('token')
 
   useEffect(() => {
-    const token = searchParams.get('token')
     if (!token) {
       setError('Invalid invitation link')
       setValidatingToken(false)
@@ -179,5 +179,21 @@ export default function InvitedSignUpPage() {
         </form>
       </div>
     </div>
+  )
+}
+
+export default function InvitedSignupPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gray-100 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+        <div className="sm:mx-auto sm:w-full sm:max-w-md">
+          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
+            Loading...
+          </h2>
+        </div>
+      </div>
+    }>
+      <InvitedSignupContent />
+    </Suspense>
   )
 } 
