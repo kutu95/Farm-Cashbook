@@ -203,14 +203,24 @@ export default function ProfilePage() {
 
       if (error) throw error
 
-      // Create a PDF for each statement
-      const statements = data.statements
-      const count = data.count
+      // Send statements via email
+      const response = await fetch('/api/send-statements', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data)
+      })
 
-      // For now, just show success message
-      // TODO: Add PDF generation and email sending
-      setMessage(`Generated ${count} statement(s) successfully!`)
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null)
+        throw new Error(errorData?.error || `Failed to send statements: ${response.statusText}`)
+      }
+
+      const result = await response.json()
+      setMessage(`${data.count} statement(s) will be sent to ${data.email}`)
     } catch (error: any) {
+      console.error('Error:', error)
       setError(error.message)
     } finally {
       setSendingStatements(false)

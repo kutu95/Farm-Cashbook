@@ -164,15 +164,7 @@ function StatementsContent() {
     const doc = new jsPDF()
     const party = parties.find(p => p.id === partyId)
     
-    // Add title
-    doc.text(`Statement for ${party?.name}`, 14, 15)
-    
-    // Add date range if specified
-    if (startDate && endDate) {
-      doc.text(`Period: ${startDate} to ${endDate}`, 14, 25)
-    }
-
-    // Prepare table data
+    // Prepare transactions data
     const transactions = [
       ...rawExpenses
         .filter(expense => 
@@ -199,27 +191,136 @@ function StatementsContent() {
         }))
     ]
     .sort((a, b) => a.date.localeCompare(b.date))
+
+    // Set font styles
+    doc.setFont('helvetica')
     
-    // Calculate running balance
-    let runningBalance = 0
-    const tableData = transactions.map(item => {
-      runningBalance += item.amount
-      return [
-        item.date,
-        item.description,
-        item.type,
-        item.amount.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' }),
-        runningBalance.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' })
-      ]
-    })
+    // Cover page
+    doc.setFontSize(24)
+    doc.text('Landlife Statement', 105, 40, { align: 'center' })
     
-    // Add table
-    autoTable(doc, {
-      head: [['Date', 'Description', 'Type', 'Amount', 'Balance']],
-      body: tableData,
-      startY: 35,
-      theme: 'grid'
+    doc.setFontSize(18)
+    doc.text(`For ${party?.name}`, 105, 60, { align: 'center' })
+    
+    doc.setFontSize(12)
+    const currentDate = new Date().toLocaleString('en-AU', {
+      dateStyle: 'full',
+      timeStyle: 'short'
     })
+    doc.text(`Issued at ${currentDate}`, 105, 80, { align: 'center' })
+    
+    // Balance
+    doc.setFontSize(14)
+    doc.text(
+      `Your current balance: ${balance.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' })}`,
+      105,
+      120,
+      { align: 'center' }
+    )
+    
+    // Payment details
+    doc.setFontSize(12)
+    doc.text('Pay by direct deposit to', 105, 160, { align: 'center' })
+    doc.text('Account name: Landlife Pty Ltd', 105, 170, { align: 'center' })
+    doc.text('BSB: 67873', 105, 180, { align: 'center' })
+    doc.text('Account number: 16670344', 105, 190, { align: 'center' })
+    
+    // Contact info
+    doc.setFontSize(10)
+    doc.text(
+      'Send any errors or omissions to john@streamtime.com.au',
+      105,
+      230,
+      { align: 'center' }
+    )
+
+    // Transaction pages
+    if (transactions.length > 0) {
+      doc.addPage()
+
+      // Column headers
+      doc.setFontSize(12)
+      doc.setFont('helvetica', 'bold')
+      
+      // Header background
+      doc.setFillColor(240, 240, 240)
+      doc.rect(15, 15, 180, 10, 'F')
+      
+      doc.text('Date', 20, 22)
+      doc.text('Description', 50, 22)
+      doc.text('Type', 110, 22)
+      doc.text('Amount', 155, 22, { align: 'right' })
+      doc.text('Balance', 175, 22, { align: 'right' })
+      doc.setFont('helvetica', 'normal')
+
+      let y = 32
+      const pageHeight = doc.internal.pageSize.height
+      const lineHeight = 10
+      let isAlternateRow = false
+      let totalCredits = 0
+      let totalDebits = 0
+      let runningBalance = 0
+
+      // Draw transactions
+      transactions.forEach(item => {
+        // Add new page if needed
+        if (y > pageHeight - 30) {
+          doc.addPage()
+          y = 32
+          isAlternateRow = false
+        }
+
+        // Alternate row background
+        if (isAlternateRow) {
+          doc.setFillColor(245, 245, 245)
+          doc.rect(15, y - 5, 180, lineHeight, 'F')
+        }
+
+        runningBalance += item.amount
+
+        doc.setFontSize(10)
+        doc.text(new Date(item.date).toLocaleDateString('en-AU'), 20, y)
+        
+        // Handle long descriptions
+        const description = item.description || ''
+        if (description.length > 35) {
+          doc.text(description.substring(0, 32) + '...', 50, y)
+        } else {
+          doc.text(description, 50, y)
+        }
+        
+        doc.text(item.type, 110, y)
+        doc.text(item.amount.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' }), 155, y, { align: 'right' })
+        doc.text(runningBalance.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' }), 175, y, { align: 'right' })
+
+        // Update totals
+        if (item.amount > 0) {
+          totalCredits += item.amount
+        } else {
+          totalDebits += Math.abs(item.amount)
+        }
+
+        y += lineHeight
+        isAlternateRow = !isAlternateRow
+      })
+
+      // Add totals section
+      y += lineHeight
+      doc.setFillColor(240, 240, 240)
+      doc.rect(15, y - 5, 180, lineHeight * 3, 'F')
+      
+      doc.setFont('helvetica', 'bold')
+      doc.text('Total Credits:', 110, y)
+      doc.text(totalCredits.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' }), 155, y, { align: 'right' })
+      
+      y += lineHeight
+      doc.text('Total Debits:', 110, y)
+      doc.text(totalDebits.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' }), 155, y, { align: 'right' })
+      
+      y += lineHeight
+      doc.text('Balance:', 110, y)
+      doc.text(balance.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' }), 155, y, { align: 'right' })
+    }
     
     // Save PDF
     doc.save(`statement_${party?.name}_${new Date().toISOString().split('T')[0]}.pdf`)
