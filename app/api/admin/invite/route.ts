@@ -5,7 +5,12 @@ import { nanoid } from 'nanoid'
 
 export const runtime = 'edge'
 
-const resend = new Resend(process.env.RESEND_API_KEY)
+// Initialize Resend with API key validation
+const resendApiKey = process.env.RESEND_API_KEY
+if (!resendApiKey) {
+  console.error('RESEND_API_KEY is not set in environment variables')
+}
+const resend = resendApiKey ? new Resend(resendApiKey) : null
 
 export async function POST(request: Request) {
   try {
@@ -102,6 +107,15 @@ export async function POST(request: Request) {
     }
 
     console.log('Invitation stored in database')
+
+    // Check if Resend is properly initialized
+    if (!resend) {
+      console.error('Resend API key is not configured')
+      return NextResponse.json(
+        { error: 'Email service is not configured' },
+        { status: 500 }
+      )
+    }
 
     // Send invitation email
     const signupUrl = `${process.env.NEXT_PUBLIC_APP_URL}/signup/invited?token=${token}`
