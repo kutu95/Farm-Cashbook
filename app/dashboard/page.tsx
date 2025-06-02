@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import supabase from "@/lib/supabaseClient"
 import Header from "@/components/Header"
-import { PlusCircle, DollarSign, Users, Shield, FileText } from "lucide-react"
+import { PlusCircle, DollarSign, Users, Shield, FileText, UserPlus } from "lucide-react"
 import Link from "next/link"
 import { useAuth } from "@/context/AuthContext"
 
@@ -124,6 +124,9 @@ export default function DashboardPage() {
             </Link>
             <Link href="/manage-roles" className="flex items-center bg-yellow-500 text-white px-4 py-2 rounded">
               <Shield className="mr-2" /> Manage Roles
+            </Link>
+            <Link href="/dashboard/admin/invite" className="flex items-center bg-indigo-500 text-white px-4 py-2 rounded">
+              <UserPlus className="mr-2" /> Invite User
             </Link>
           </>
         )}

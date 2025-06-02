@@ -203,25 +203,56 @@ export default function ProfilePage() {
 
       if (error) throw error
 
-      // Send statements via email
-      const response = await fetch('/api/send-statements', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(data)
-      })
+      console.log('Received statement data:', JSON.stringify(data, null, 2))
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => null)
-        throw new Error(errorData?.error || `Failed to send statements: ${response.statusText}`)
+      if (!data || !data.statements || !Array.isArray(data.statements)) {
+        throw new Error('Invalid statement data received from server')
       }
 
-      const result = await response.json()
-      setMessage(`${data.count} statement(s) will be sent to ${data.email}`)
+      // Send statements via email with retry logic
+      let response
+      let retryCount = 0
+      const maxRetries = 3
+
+      while (retryCount < maxRetries) {
+        try {
+          response = await fetch('/api/send-statements', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(data)
+          })
+
+          if (response.ok) {
+            const result = await response.json()
+            setMessage(`${data.count} statement(s) will be sent to ${data.email}`)
+            return
+          }
+
+          // If response is not ok, get error details
+          const errorData = await response.json().catch(() => null)
+          throw new Error(errorData?.error || `Failed to send statements: ${response.statusText}`)
+        } catch (fetchError: any) {
+          console.error(`Attempt ${retryCount + 1} failed:`, fetchError)
+          retryCount++
+          
+          if (retryCount === maxRetries) {
+            throw new Error(`Failed to send statements after ${maxRetries} attempts: ${fetchError.message}`)
+          }
+          
+          // Wait before retrying (exponential backoff)
+          await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount) * 1000))
+        }
+      }
     } catch (error: any) {
       console.error('Error:', error)
       setError(error.message)
+      
+      // Try to reload the page data in case of session issues
+      if (error.message.includes('Failed to fetch')) {
+        await loadData(user.id)
+      }
     } finally {
       setSendingStatements(false)
     }

@@ -1,200 +1,116 @@
 import { NextResponse } from 'next/server'
-import jsPDF from 'jspdf'
 import { Resend } from 'resend'
+import { generateStatementPDF } from '../../utils/generateStatementPDF'
 
+// Initialize Resend with detailed error logging
 const resend = new Resend(process.env.RESEND_API_KEY)
-
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat('en-AU', {
-    style: 'currency',
-    currency: 'AUD'
-  }).format(amount)
-}
-
-function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString('en-AU')
-}
-
-function generateStatementPDF(
-  partyName: string,
-  statementBalance: number,
-  statements: any[]
-): Buffer {
-  const doc = new jsPDF()
-  
-  // Set font styles
-  doc.setFont('helvetica')
-  
-  // Cover page
-  doc.setFontSize(24)
-  doc.text('Landlife Statement', 105, 40, { align: 'center' })
-  
-  doc.setFontSize(18)
-  doc.text(`For ${partyName}`, 105, 60, { align: 'center' })
-  
-  doc.setFontSize(12)
-  const currentDate = new Date().toLocaleString('en-AU', {
-    dateStyle: 'full',
-    timeStyle: 'short'
-  })
-  doc.text(`Issued at ${currentDate}`, 105, 80, { align: 'center' })
-  
-  // Balance
-  doc.setFontSize(14)
-  doc.text(
-    `Your current balance: ${formatCurrency(statementBalance)}`,
-    105,
-    120,
-    { align: 'center' }
-  )
-  
-  // Payment details
-  doc.setFontSize(12)
-  doc.text('Pay by direct deposit to', 105, 160, { align: 'center' })
-  doc.text('Account name: Landlife Pty Ltd', 105, 170, { align: 'center' })
-  doc.text('BSB: 67873', 105, 180, { align: 'center' })
-  doc.text('Account number: 16670344', 105, 190, { align: 'center' })
-  
-  // Contact info
-  doc.setFontSize(10)
-  doc.text(
-    'Send any errors or omissions to john@streamtime.com.au',
-    105,
-    230,
-    { align: 'center' }
-  )
-
-  // Transaction pages
-  const statement = statements[0].statement_data
-  if (statement && statement.transactions && statement.transactions.length > 0) {
-    doc.addPage()
-
-    // Column headers
-    doc.setFontSize(12)
-    doc.setFont('helvetica', 'bold')
-    
-    // Header background
-    doc.setFillColor(240, 240, 240)
-    doc.rect(15, 15, 180, 10, 'F')
-    
-    doc.text('Date', 20, 22)
-    doc.text('Description', 50, 22)
-    doc.text('Reference', 120, 22)
-    doc.text('Amount', 170, 22)
-    doc.setFont('helvetica', 'normal')
-
-    let y = 32
-    const pageHeight = doc.internal.pageSize.height
-    const lineHeight = 10
-    let isAlternateRow = false
-    let totalCredits = 0
-    let totalDebits = 0
-
-    // Draw transactions
-    statement.transactions.forEach((transaction: any) => {
-      // Add new page if needed
-      if (y > pageHeight - 30) {
-        doc.addPage()
-        y = 32
-        isAlternateRow = false
-      }
-
-      // Alternate row background
-      if (isAlternateRow) {
-        doc.setFillColor(245, 245, 245)
-        doc.rect(15, y - 5, 180, lineHeight, 'F')
-      }
-
-      doc.setFontSize(10)
-      doc.text(formatDate(transaction.date), 20, y)
-      
-      // Handle long descriptions
-      const description = transaction.description || ''
-      if (description.length > 40) {
-        doc.text(description.substring(0, 37) + '...', 50, y)
-      } else {
-        doc.text(description, 50, y)
-      }
-      
-      doc.text(transaction.reference || '', 120, y)
-      doc.text(formatCurrency(transaction.amount), 170, y, { align: 'right' })
-
-      // Update totals
-      if (transaction.amount > 0) {
-        totalCredits += transaction.amount
-      } else {
-        totalDebits += Math.abs(transaction.amount)
-      }
-
-      y += lineHeight
-      isAlternateRow = !isAlternateRow
-    })
-
-    // Add totals section
-    y += lineHeight
-    doc.setFillColor(240, 240, 240)
-    doc.rect(15, y - 5, 180, lineHeight * 3, 'F')
-    
-    doc.setFont('helvetica', 'bold')
-    doc.text('Total Credits:', 120, y)
-    doc.text(formatCurrency(totalCredits), 170, y, { align: 'right' })
-    
-    y += lineHeight
-    doc.text('Total Debits:', 120, y)
-    doc.text(formatCurrency(totalDebits), 170, y, { align: 'right' })
-    
-    y += lineHeight
-    doc.text('Balance:', 120, y)
-    doc.text(formatCurrency(statement.running_balance), 170, y, { align: 'right' })
-  }
-  
-  // Convert to Buffer
-  const pdfBuffer = Buffer.from(doc.output('arraybuffer'))
-  return pdfBuffer
-}
 
 export async function POST(request: Request) {
   try {
     const { statements, email, month, year } = await request.json()
     
-    // Extract party name and balance from the first statement
-    const firstStatement = statements[0]
-    const partyName = firstStatement.party_name
-    const statementBalance = firstStatement.statement_data?.running_balance || 0
-    
-    // Generate PDF
-    const pdfBuffer = generateStatementPDF(partyName, statementBalance, statements)
-    
-    // Send email with PDF attachment
-    if (process.env.RESEND_API_KEY) {
-      await resend.emails.send({
-        from: 'Landlife <statements@landlife.com.au>',
-        to: email,
-        subject: `Landlife Statement - ${month} ${year}`,
-        html: `
-          <p>Dear ${partyName},</p>
-          <p>Please find attached your statement for ${month} ${year}.</p>
-          <p>Your current balance is ${formatCurrency(statementBalance)}.</p>
-          <p>For any questions or concerns, please contact us at john@streamtime.com.au.</p>
-          <p>Best regards,<br>Landlife</p>
-        `,
-        attachments: [{
-          filename: `landlife-statement-${month.toLowerCase().trim()}-${year}.pdf`,
-          content: pdfBuffer
-        }]
-      })
+    if (!statements || !email || !month || !year) {
+      return NextResponse.json(
+        { error: 'Missing required fields' },
+        { status: 400 }
+      )
     }
 
-    return NextResponse.json({ 
-      success: true, 
-      message: `Statement sent to ${email}`,
-      pdfSize: pdfBuffer.length
-    })
+    // Generate PDF for each statement
+    try {
+      // Debug logging
+      console.log('Processing statements:', JSON.stringify(statements, null, 2))
+
+      const pdfAttachments = await Promise.all(statements.map(async (statement: any) => {
+        console.log('Generating PDF for party:', statement.party_name)
+        console.log('Statement data:', JSON.stringify(statement.statement_data, null, 2))
+
+        if (!statement.statement_data || !statement.statement_data.transactions) {
+          throw new Error(`Invalid statement data for party ${statement.party_name}`)
+        }
+
+        // Transform transactions data
+        const transactions = statement.statement_data.transactions.map((t: any) => {
+          const isExpense = t.type === 'expense'
+          return {
+            date: t.date,
+            description: t.description,
+            type: isExpense ? 'Expense' : 'Payment',
+            amount: isExpense ? -(t.allocated_amount || 0) : (t.amount || 0)
+          }
+        })
+
+        console.log(`Transformed ${transactions.length} transactions for ${statement.party_name}:`, 
+          JSON.stringify(transactions, null, 2))
+
+        const pdfData = generateStatementPDF({
+          partyName: statement.party_name,
+          closingBalance: statement.statement_data.closing_balance,
+          transactions
+        })
+
+        // Ensure we have a Buffer
+        const pdfBuffer = Buffer.isBuffer(pdfData) ? pdfData : Buffer.from(pdfData)
+        console.log(`Generated PDF for ${statement.party_name}, size:`, pdfBuffer.length)
+
+        return {
+          filename: `landlife-statement-${statement.party_name.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${month.toLowerCase().trim()}-${year}.pdf`,
+          content: pdfBuffer
+        }
+      }))
+
+      // Send email with all PDF attachments
+      if (!process.env.RESEND_API_KEY) {
+        console.error('RESEND_API_KEY is not configured')
+        return NextResponse.json(
+          { error: 'Email service is not configured' },
+          { status: 500 }
+        )
+      }
+
+      console.log('Attempting to send email with attachments to:', email)
+      
+      try {
+        const emailResponse = await resend.emails.send({
+          from: 'Landlife <statements@landlife.au>',
+          to: email,
+          subject: `Landlife Statements - ${month} ${year}`,
+          html: `
+            <p>Hello,</p>
+            <p>Please find attached your requested statement(s).</p>
+            <p>All bills from synergy can be found on Google Drive <a href="https://drive.google.com/drive/folders/1A-3aG0eZVZKzuu_4OEbYglnxe78qrTZJ">here</a>.</p>
+            <p>Best regards,<br>Landlife</p>
+          `,
+          attachments: pdfAttachments
+        })
+        
+        console.log('Email sent successfully:', emailResponse)
+        
+        return NextResponse.json({ 
+          success: true, 
+          message: `${pdfAttachments.length} statement(s) sent to ${email}`,
+          pdfCount: pdfAttachments.length,
+          emailResponse
+        })
+      } catch (emailError: any) {
+        console.error('Resend API Error:', emailError)
+        return NextResponse.json(
+          { error: `Failed to send email: ${emailError.message}` },
+          { status: 500 }
+        )
+      }
+    } catch (pdfError: any) {
+      console.error('PDF Generation Error:', pdfError)
+      return NextResponse.json(
+        { error: `Failed to generate PDF: ${pdfError.message}` },
+        { status: 500 }
+      )
+    }
   } catch (error: any) {
-    console.error('Error sending statements:', error)
+    console.error('Request Error:', error)
     return NextResponse.json(
-      { error: error.message || 'Failed to send statements' },
-      { status: 500 }
+      { error: error.message },
+      { status: 400 }
     )
   }
 } 

@@ -34,9 +34,28 @@ DECLARE
     v_party_name text;
     v_opening_balance numeric;
     v_closing_balance numeric;
+    v_payment_count integer;
+    v_expense_count integer;
 BEGIN
     -- Get party name
     SELECT name INTO v_party_name FROM parties WHERE id = p_party_id;
+
+    -- Get counts for debugging
+    SELECT COUNT(*) INTO v_payment_count
+    FROM payments
+    WHERE party_id = p_party_id
+    AND payment_date >= p_start_date
+    AND payment_date <= p_end_date;
+
+    SELECT COUNT(*) INTO v_expense_count
+    FROM expense_allocations ea
+    JOIN expenses e ON e.id = ea.expense_id
+    WHERE ea.party_id = p_party_id
+    AND e.expense_date >= p_start_date
+    AND e.expense_date <= p_end_date;
+
+    RAISE NOTICE 'Generating statement for party %, date range: % to %, found % payments and % expenses',
+        v_party_name, p_start_date, p_end_date, v_payment_count, v_expense_count;
 
     -- Calculate opening balance (as of start date)
     SELECT COALESCE(
@@ -83,34 +102,39 @@ BEGIN
         'period_end', p_end_date,
         'opening_balance', v_opening_balance,
         'closing_balance', v_closing_balance,
-        'transactions', (
-            SELECT jsonb_agg(t ORDER BY t.date, t.type DESC)
-            FROM (
-                -- Payments
-                SELECT 
-                    payment_date as date,
-                    'payment' as type,
-                    description,
-                    amount as amount,
-                    NULL as allocated_amount
-                FROM payments
-                WHERE party_id = p_party_id
-                AND payment_date BETWEEN p_start_date AND p_end_date
-                
-                UNION ALL
-                
-                -- Expenses
-                SELECT 
-                    e.expense_date as date,
-                    'expense' as type,
-                    e.description,
-                    e.amount as total_amount,
-                    ea.allocated_amount
-                FROM expense_allocations ea
-                JOIN expenses e ON e.id = ea.expense_id
-                WHERE ea.party_id = p_party_id
-                AND e.expense_date BETWEEN p_start_date AND p_end_date
-            ) t
+        'transactions', COALESCE(
+            (
+                SELECT jsonb_agg(t ORDER BY t.date, t.type DESC)
+                FROM (
+                    -- Payments
+                    SELECT 
+                        payment_date as date,
+                        'payment' as type,
+                        description,
+                        amount as amount,
+                        NULL as allocated_amount
+                    FROM payments
+                    WHERE party_id = p_party_id
+                    AND payment_date >= p_start_date
+                    AND payment_date <= p_end_date
+                    
+                    UNION ALL
+                    
+                    -- Expenses
+                    SELECT 
+                        e.expense_date as date,
+                        'expense' as type,
+                        e.description,
+                        e.amount as total_amount,
+                        ea.allocated_amount
+                    FROM expense_allocations ea
+                    JOIN expenses e ON e.id = ea.expense_id
+                    WHERE ea.party_id = p_party_id
+                    AND e.expense_date >= p_start_date
+                    AND e.expense_date <= p_end_date
+                ) t
+            ),
+            '[]'::jsonb
         )
     );
 

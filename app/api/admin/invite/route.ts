@@ -1,0 +1,145 @@
+import { NextResponse } from 'next/server'
+import { Resend } from 'resend'
+import { createClient } from '@supabase/supabase-js'
+import { nanoid } from 'nanoid'
+
+export const runtime = 'edge'
+
+const resend = new Resend(process.env.RESEND_API_KEY)
+
+export async function POST(request: Request) {
+  try {
+    console.log('=== API route called ===')
+
+    // Get user info from request headers (set by middleware)
+    const userId = request.headers.get('x-user-id')
+    const userRole = request.headers.get('x-user-role')
+    const authToken = request.headers.get('authorization')?.split('Bearer ')[1]
+
+    console.log('Auth check:', { userId, userRole })
+
+    if (!userId || userRole !== 'admin' || !authToken) {
+      return NextResponse.json(
+        { error: 'Unauthorized - Admin access required' },
+        { status: 403 }
+      )
+    }
+
+    // Create Supabase client
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+          detectSessionInUrl: false
+        },
+        global: {
+          headers: {
+            Authorization: `Bearer ${authToken}`
+          }
+        }
+      }
+    )
+    console.log('Supabase client created')
+
+    // Verify admin status directly
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    if (userError || !user) {
+      return NextResponse.json(
+        { error: 'Authentication failed' },
+        { status: 401 }
+      )
+    }
+
+    const { data: roleData, error: roleError } = await supabase
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', user.id)
+      .single()
+
+    if (roleError || !roleData || roleData.role !== 'admin') {
+      return NextResponse.json(
+        { error: 'Admin privileges required' },
+        { status: 403 }
+      )
+    }
+
+    const { email } = await request.json()
+    console.log('Received email:', email)
+    
+    if (!email) {
+      console.log('No email provided')
+      return NextResponse.json(
+        { error: 'Email is required' },
+        { status: 400 }
+      )
+    }
+
+    // Generate a unique token for this invitation
+    const token = nanoid()
+    console.log('Generated invitation token')
+
+    // Store the invitation in the database
+    const { error: inviteError } = await supabase
+      .from('user_invitations')
+      .insert([
+        {
+          email,
+          token,
+          invited_by: user.id,
+          expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() // 7 days from now
+        }
+      ])
+
+    if (inviteError) {
+      console.error('Invitation Error:', inviteError)
+      return NextResponse.json(
+        { error: 'Failed to create invitation' },
+        { status: 500 }
+      )
+    }
+
+    console.log('Invitation stored in database')
+
+    // Send invitation email
+    const signupUrl = `${process.env.NEXT_PUBLIC_APP_URL}/signup/invited?token=${token}`
+    console.log('Signup URL generated:', signupUrl)
+    
+    try {
+      console.log('Attempting to send email via Resend')
+      await resend.emails.send({
+        from: 'Landlife <statements@landlife.au>',
+        to: email,
+        subject: 'Invitation to Farm Cashbook',
+        html: `
+          <p>Hello,</p>
+          <p>You have been invited to join Farm Cashbook.</p>
+          <p>Click the link below to complete your registration:</p>
+          <p><a href="${signupUrl}">${signupUrl}</a></p>
+          <p>This invitation link will expire in 7 days.</p>
+          <p>Best regards,<br>Farm Cashbook Team</p>
+        `
+      })
+      
+      console.log('Email sent successfully')
+      return NextResponse.json({ 
+        success: true, 
+        message: 'Invitation sent successfully'
+      })
+    } catch (emailError: any) {
+      console.error('Email Error:', emailError)
+      return NextResponse.json(
+        { error: 'Failed to send invitation email' },
+        { status: 500 }
+      )
+    }
+  } catch (error: any) {
+    console.error('Request Error:', error)
+    return NextResponse.json(
+      { error: error.message },
+      { status: 400 }
+    )
+  }
+} 
