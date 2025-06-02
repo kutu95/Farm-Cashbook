@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { createClient } from '@supabase/supabase-js'
 import { nanoid } from 'nanoid'
+import crypto from 'crypto'
 
 export const runtime = 'edge'
 
@@ -83,8 +84,9 @@ export async function POST(request: Request) {
     }
 
     // Generate a unique token for this invitation
-    const token = nanoid()
-    console.log('Generated invitation token')
+    const token = crypto.randomUUID()
+    const expiresAt = new Date()
+    expiresAt.setDate(expiresAt.getDate() + 7)
 
     // Store the invitation in the database
     const { error: inviteError } = await supabase
@@ -93,8 +95,8 @@ export async function POST(request: Request) {
         {
           email,
           token,
-          invited_by: user.id,
-          expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() // 7 days from now
+          expires_at: expiresAt.toISOString(),
+          invited_by: user.id
         }
       ])
 
@@ -118,13 +120,13 @@ export async function POST(request: Request) {
     }
 
     // Send invitation email
-    const signupUrl = `${process.env.NEXT_PUBLIC_APP_URL}/signup/invited?token=${token}`
+    const signupUrl = `https://books.landlife.au/signup/invited?token=${token}`
     console.log('Signup URL generated:', signupUrl)
     
     try {
       console.log('Attempting to send email via Resend')
       await resend.emails.send({
-        from: 'Landlife <statements@landlife.au>',
+        from: 'John <john@streamtime.com.au>',
         to: email,
         subject: 'Invitation to Farm Cashbook',
         html: `
