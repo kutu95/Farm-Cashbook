@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import supabase from "@/lib/supabaseClient"
 
@@ -132,6 +132,20 @@ function ResetPasswordContent() {
   )
 }
 
+function LoadingFallback() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="text-center">
+        <h2 className="text-xl font-semibold text-gray-900">Loading...</h2>
+      </div>
+    </div>
+  )
+}
+
 export default function ResetPasswordPage() {
-  return <ResetPasswordContent />
+  return (
+    <Suspense fallback={<LoadingFallback />}>
+      <ResetPasswordContent />
+    </Suspense>
+  )
 } 
