@@ -2,71 +2,108 @@
 
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import supabase from "@/lib/supabaseClient"
 import Header from "@/components/Header"
 import { PlusCircle, DollarSign, Users, Shield, FileText } from "lucide-react"
 import Link from "next/link"
 import { useAuth } from "@/context/AuthContext"
 
 export default function DashboardPage() {
-  const { session } = useAuth()
+  const { supabase, session } = useAuth()
   const router = useRouter()
   const [partyBalances, setPartyBalances] = useState<any[]>([])
   const [isAdmin, setIsAdmin] = useState(false)
 
   useEffect(() => {
-    loadBalances()
+    console.log('Session changed:', { hasUser: !!session?.user })
     if (session?.user) {
+      loadBalances()
       checkAdminStatus()
+    } else {
+      setIsAdmin(false)
     }
   }, [session])
+
+  useEffect(() => {
+    console.log('isAdmin state changed:', isAdmin)
+  }, [isAdmin])
 
   const checkAdminStatus = async () => {
     if (!session?.user?.id) {
       console.log('No user session')
+      setIsAdmin(false)
       return
     }
 
     try {
+      // Log the current session state
+      console.log('Checking admin status with session:', {
+        userId: session.user.id,
+        email: session.user.email
+      })
+
+      // Now check for the specific user's role
       const { data, error } = await supabase
         .from('user_roles')
         .select('role')
         .eq('user_id', session.user.id)
-        .single()
+        .maybeSingle()
 
-      if (!error && data) {
-        setIsAdmin(data.role === 'admin')
+      if (error) {
+        console.error('Error checking specific user role:', error)
+        setIsAdmin(false)
+        return
       }
+
+      console.log('Role check result:', { data, userId: session.user.id })
+
+      if (!data) {
+        console.log('No role found for user, defaulting to non-admin')
+        setIsAdmin(false)
+        return
+      }
+
+      const isUserAdmin = data.role === 'admin'
+      console.log('Admin status determined:', { isUserAdmin, roleData: data })
+      setIsAdmin(isUserAdmin)
     } catch (err) {
-      console.error('Error checking admin status:', err)
+      console.error('Error in checkAdminStatus:', err)
+      setIsAdmin(false)
     }
   }
 
   const loadBalances = async () => {
-    const { data: parties } = await supabase.from("parties").select("id, name")
-    const balances = []
+    try {
+      // Get all parties with their total payments and expenses in a single query
+      const { data: balances, error } = await supabase
+        .from('parties')
+        .select(`
+          id,
+          name,
+          payments:payments(amount),
+          expense_allocations:expense_allocations(allocated_amount)
+        `)
 
-    for (const party of parties || []) {
-      const { data: payments } = await supabase
-        .from("payments")
-        .select("amount")
-        .eq("party_id", party.id)
-      const totalPayments = payments?.reduce((sum, p) => sum + p.amount, 0) || 0
+      if (error) {
+        console.error('Error loading balances:', error)
+        return
+      }
 
-      const { data: allocations } = await supabase
-        .from("expense_allocations")
-        .select("allocated_amount")
-        .eq("party_id", party.id)
-      const totalExpenses = allocations?.reduce((sum, a) => sum + a.allocated_amount, 0) || 0
-
-      balances.push({
-        id: party.id,
-        name: party.name,
-        balance: totalPayments - totalExpenses
+      // Calculate balances for each party
+      const calculatedBalances = balances.map(party => {
+        const totalPayments = (party.payments || []).reduce((sum, p) => sum + (p.amount || 0), 0)
+        const totalExpenses = (party.expense_allocations || []).reduce((sum, e) => sum + (e.allocated_amount || 0), 0)
+        
+        return {
+          id: party.id,
+          name: party.name,
+          balance: totalPayments - totalExpenses
+        }
       })
-    }
 
-    setPartyBalances(balances)
+      setPartyBalances(calculatedBalances)
+    } catch (err) {
+      console.error('Error in loadBalances:', err)
+    }
   }
 
   return (

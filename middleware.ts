@@ -70,9 +70,16 @@ export async function middleware(req: NextRequest) {
         .from('user_roles')
         .select('role')
         .eq('user_id', user.id)
-        .single()
+        .maybeSingle()
 
-      if (roleError || !roleData || roleData.role !== 'admin') {
+      if (roleError) {
+        console.error('Error checking admin status:', roleError)
+        const redirectUrl = req.nextUrl.clone()
+        redirectUrl.pathname = '/dashboard'
+        return NextResponse.redirect(redirectUrl)
+      }
+
+      if (!roleData || roleData.role !== 'admin') {
         // If not admin, redirect to dashboard
         const redirectUrl = req.nextUrl.clone()
         redirectUrl.pathname = '/dashboard'
@@ -80,6 +87,7 @@ export async function middleware(req: NextRequest) {
       }
     } catch (error) {
       // On error, redirect to dashboard
+      console.error('Error in admin check:', error)
       const redirectUrl = req.nextUrl.clone()
       redirectUrl.pathname = '/dashboard'
       return NextResponse.redirect(redirectUrl)

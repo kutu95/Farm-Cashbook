@@ -76,27 +76,50 @@ function StatementsContent() {
   useEffect(() => {
     if (!loading && session?.user) {
       checkAdminStatus()
+    } else {
+      setIsAdmin(false)
     }
   }, [session, loading])
 
+  // Add debug logging for isAdmin changes
+  useEffect(() => {
+    console.log('isAdmin state changed:', isAdmin)
+  }, [isAdmin])
+
   const checkAdminStatus = async () => {
-    if (!session?.user?.id) return
+    if (!session?.user?.id) {
+      console.log('No user session')
+      setIsAdmin(false)
+      return
+    }
     
     try {
+      console.log('Checking admin status for user:', session.user.id)
       const { data, error } = await supabase
         .from('user_roles')
         .select('role')
         .eq('user_id', session.user.id)
-        .single()
+        .maybeSingle()
 
       if (error) {
         console.error('Error checking admin status:', error)
+        setIsAdmin(false)
         return
       }
 
-      setIsAdmin(data?.role === 'admin')
+      // If no data is found, the user is not an admin
+      if (!data) {
+        console.log('No role found for user, defaulting to non-admin')
+        setIsAdmin(false)
+        return
+      }
+
+      const isUserAdmin = data.role === 'admin'
+      console.log('Admin status check result:', { isUserAdmin, roleData: data })
+      setIsAdmin(isUserAdmin)
     } catch (err) {
       console.error('Error checking admin status:', err)
+      setIsAdmin(false)
     }
   }
 

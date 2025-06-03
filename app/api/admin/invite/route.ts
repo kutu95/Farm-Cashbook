@@ -85,10 +85,18 @@ export async function POST(request: Request) {
       .from('user_roles')
       .select('role')
       .eq('user_id', user.id)
-      .single()
+      .maybeSingle()
 
-    if (roleError || !roleData || roleData.role !== 'admin') {
+    if (roleError) {
       console.error('Role check error:', roleError)
+      return corsResponse(
+        { error: 'Error checking admin privileges' },
+        500
+      )
+    }
+
+    if (!roleData || roleData.role !== 'admin') {
+      console.error('User is not admin:', { roleData })
       return corsResponse(
         { error: 'Admin privileges required' },
         403

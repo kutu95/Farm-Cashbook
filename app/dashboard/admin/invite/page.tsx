@@ -39,7 +39,7 @@ export default function InviteUserPage() {
           .from('user_roles')
           .select('role')
           .eq('user_id', user.id)
-          .single()
+          .maybeSingle()
 
         console.log('Admin check:', {
           roleData,
@@ -53,7 +53,14 @@ export default function InviteUserPage() {
           return
         }
 
-        const isUserAdmin = roleData?.role === 'admin'
+        if (!roleData) {
+          console.log('No role found for user, defaulting to non-admin')
+          setIsAdmin(false)
+          router.push('/dashboard')
+          return
+        }
+
+        const isUserAdmin = roleData.role === 'admin'
         setIsAdmin(isUserAdmin)
 
         if (!isUserAdmin) {
