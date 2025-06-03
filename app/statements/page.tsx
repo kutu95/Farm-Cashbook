@@ -2,7 +2,6 @@
 
 import { useEffect, useState, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
-import supabase from "@/lib/supabaseClient"
 import Header from "@/components/Header"
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
@@ -43,7 +42,7 @@ interface RawExpenseResponse {
 }
 
 function StatementsContent() {
-  const { session, loading } = useAuth()
+  const { supabase, session, loading: authLoading } = useAuth()
   const searchParams = useSearchParams()
   const [parties, setParties] = useState<Party[]>([])
   const [partyId, setPartyId] = useState("")
@@ -57,10 +56,10 @@ function StatementsContent() {
   const [sortAscending, setSortAscending] = useState(true)
 
   useEffect(() => { 
-    if (!loading) {
+    if (!authLoading && session?.user) {
       loadParties() 
     }
-  }, [loading])
+  }, [authLoading, session])
   
   useEffect(() => {
     const urlPartyId = searchParams.get('party')
@@ -74,12 +73,12 @@ function StatementsContent() {
   }, [partyId])
 
   useEffect(() => {
-    if (!loading && session?.user) {
+    if (!authLoading && session?.user) {
       checkAdminStatus()
     } else {
       setIsAdmin(false)
     }
-  }, [session, loading])
+  }, [session, authLoading])
 
   // Add debug logging for isAdmin changes
   useEffect(() => {
@@ -107,7 +106,6 @@ function StatementsContent() {
         return
       }
 
-      // If no data is found, the user is not an admin
       if (!data) {
         console.log('No role found for user, defaulting to non-admin')
         setIsAdmin(false)
@@ -124,38 +122,60 @@ function StatementsContent() {
   }
 
   const loadParties = async () => {
-    const { data, error } = await supabase.from("parties").select("*")
-    if (error) setError(error.message)
-    else setParties(data)
+    try {
+      const { data, error } = await supabase.from("parties").select("*")
+      if (error) {
+        console.error('Error loading parties:', error)
+        setError(error.message)
+        return
+      }
+      setParties(data)
+    } catch (err) {
+      console.error('Error in loadParties:', err)
+      setError('Failed to load parties')
+    }
   }
 
   const loadStatementsForParty = async (partyId: string) => {
-    const [expensesResponse, paymentsResponse] = await Promise.all([
-      supabase
-        .from("expense_allocations")
-        .select(`
-          allocated_amount,
-          expense_id (
-            id,
-            description,
-            expense_date,
-            amount
-          ),
-          party_id
-        `)
-        .eq("party_id", partyId),
-      supabase
-        .from("payments")
-        .select("*")
-        .eq("party_id", partyId)
-        .order("payment_date", { ascending: true })
-    ])
+    try {
+      setError('')
+      const [expensesResponse, paymentsResponse] = await Promise.all([
+        supabase
+          .from("expense_allocations")
+          .select(`
+            allocated_amount,
+            expense_id (
+              id,
+              description,
+              expense_date,
+              amount
+            ),
+            party_id
+          `)
+          .eq("party_id", partyId),
+        supabase
+          .from("payments")
+          .select("*")
+          .eq("party_id", partyId)
+          .order("payment_date", { ascending: true })
+      ])
 
-    if (expensesResponse.error) {
-      setError(expensesResponse.error.message)
-      console.error('Expenses error:', expensesResponse.error)
-    } else {
-      console.log('Expenses data:', expensesResponse.data)
+      if (expensesResponse.error) {
+        console.error('Expenses error:', expensesResponse.error)
+        setError(expensesResponse.error.message)
+        return
+      }
+
+      if (paymentsResponse.error) {
+        console.error('Payments error:', paymentsResponse.error)
+        setError(paymentsResponse.error.message)
+        return
+      }
+
+      console.log('Data loaded:', {
+        expenses: expensesResponse.data,
+        payments: paymentsResponse.data
+      })
       
       // Transform the raw response into the expected format with proper type casting
       const transformedExpenses = ((expensesResponse.data as unknown) as RawExpenseResponse[]).map(item => ({
@@ -173,14 +193,10 @@ function StatementsContent() {
         })
       
       setRawExpenses(sortedExpenses)
-    }
-
-    if (paymentsResponse.error) {
-      setError(paymentsResponse.error.message)
-      console.error('Payments error:', paymentsResponse.error)
-    } else {
-      console.log('Payments data:', paymentsResponse.data)
       setRawPayments(paymentsResponse.data)
+    } catch (err) {
+      console.error('Error in loadStatementsForParty:', err)
+      setError('Failed to load statements')
     }
   }
 
@@ -298,7 +314,7 @@ function StatementsContent() {
 
       {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">{error}</div>}
 
-      {loading ? (
+      {authLoading ? (
         <div className="flex justify-center items-center p-8">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
         </div>
