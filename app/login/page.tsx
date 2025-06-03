@@ -2,10 +2,11 @@
 
 import { useState, useEffect, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import supabase from "@/lib/supabaseClient"
 import Link from "next/link"
+import { useAuth } from "@/context/AuthContext"
 
 function LoginContent() {
+  const { supabase, session, loading: authLoading } = useAuth()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState<string | null>(null)
@@ -17,14 +18,11 @@ function LoginContent() {
 
   useEffect(() => {
     // Check if user is already logged in
-    const checkUser = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (session) {
-        router.replace("/dashboard")
-      }
+    if (!authLoading && session) {
+      console.log('User already logged in, redirecting to dashboard')
+      router.replace("/dashboard")
     }
-    checkUser()
-  }, [router])
+  }, [session, authLoading, router])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -32,27 +30,36 @@ function LoginContent() {
     setError(null)
 
     try {
+      console.log('Attempting login for:', email)
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       })
 
       if (error) {
+        console.error('Login error:', error)
         setError(error.message)
-        setLoading(false)
         return
       }
 
       if (data?.session) {
-        // Wait for the session to be set
-        await supabase.auth.setSession(data.session)
-        // Navigate to dashboard
-        router.replace("/dashboard")
+        console.log('Login successful, redirecting to:', redirectTo)
+        router.replace(redirectTo)
       }
     } catch (err) {
+      console.error('Unexpected error during login:', err)
       setError("An unexpected error occurred")
+    } finally {
       setLoading(false)
     }
+  }
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+      </div>
+    )
   }
 
   return (
