@@ -1,13 +1,13 @@
-import { createServerClient } from '@supabase/ssr'
+import { createServerComponentClient } from '@supabase/auth-helpers-nextjs'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import type { CookieOptions } from '@supabase/ssr'
+import { cookies } from 'next/headers'
 
 // List of public paths that don't require authentication
 const publicPaths = ['/login', '/signup', '/forgot-password', '/reset-password']
 
 // List of admin-only paths
-const adminPaths = ['/dashboard/admin', '/api/admin', '/api/admin/invite', '/manage-roles', '/manage-parties', '/add-expense', '/add-payment', '/dashboard/admin/invite']
+const adminPaths = ['/dashboard/admin', '/api/admin', '/api/admin/invite', '/manage-roles', '/manage-parties', '/add-expense', '/add-payment', '/dashboard/admin/invite', '/audit-logs']
 
 export async function middleware(req: NextRequest) {
   let response = NextResponse.next({
@@ -16,33 +16,7 @@ export async function middleware(req: NextRequest) {
     },
   })
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name: string) {
-          return req.cookies.get(name)?.value
-        },
-        set(name: string, value: string, options: CookieOptions) {
-          response.cookies.set({
-            name,
-            value,
-            ...options,
-            sameSite: options.sameSite as "lax" | "strict" | "none" | undefined,
-          })
-        },
-        remove(name: string, options: CookieOptions) {
-          response.cookies.set({
-            name,
-            value: '',
-            ...options,
-            sameSite: options.sameSite as "lax" | "strict" | "none" | undefined,
-          })
-        },
-      },
-    }
-  )
+  const supabase = createServerComponentClient({ cookies })
 
   // Get authenticated user
   const { data: { session }, error: sessionError } = await supabase.auth.getSession()
@@ -106,7 +80,20 @@ export async function middleware(req: NextRequest) {
   if (user) {
     const requestHeaders = new Headers(req.headers)
     requestHeaders.set('x-user-id', user.id)
-    requestHeaders.set('x-user-role', 'admin') // Set if we got here and it's an admin path
+    
+    // Only set admin role if we've confirmed the user is an admin
+    if (isAdminPath) {
+      const { data: roleData } = await supabase
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', user.id)
+        .maybeSingle()
+      
+      if (roleData?.role === 'admin') {
+        requestHeaders.set('x-user-role', 'admin')
+      }
+    }
+
     if (session?.access_token) {
       requestHeaders.set('authorization', `Bearer ${session.access_token}`)
     }

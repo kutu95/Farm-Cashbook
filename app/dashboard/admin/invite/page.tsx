@@ -4,11 +4,12 @@ import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/context/AuthContext"
 import Header from "@/components/Header"
-import supabase from "@/lib/supabaseClient"
 
 export default function InviteUserPage() {
   const router = useRouter()
-  const { session } = useAuth()
+  const { session, supabase } = useAuth()
+  
+  // Group all useState hooks together
   const [email, setEmail] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
@@ -16,20 +17,12 @@ export default function InviteUserPage() {
   const [isAdmin, setIsAdmin] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
 
+  // Combine all auth and admin checks into a single useEffect
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        // Get authenticated user
-        const { data: { user }, error: userError } = await supabase.auth.getUser()
-        
-        console.log('Auth check:', { 
-          hasUser: !!user, 
-          userId: user?.id,
-          error: userError 
-        })
-
-        if (userError || !user) {
-          console.log('No authenticated user, redirecting to login')
+        if (!session?.user) {
+          console.log('No session, redirecting to login')
           router.push('/login')
           return
         }
@@ -38,7 +31,7 @@ export default function InviteUserPage() {
         const { data: roleData, error: roleError } = await supabase
           .from('user_roles')
           .select('role')
-          .eq('user_id', user.id)
+          .eq('user_id', session.user.id)
           .maybeSingle()
 
         console.log('Admin check:', {
@@ -50,33 +43,28 @@ export default function InviteUserPage() {
         if (roleError) {
           console.error('Error checking admin status:', roleError)
           setError('Error checking admin status')
-          return
-        }
-
-        if (!roleData) {
-          console.log('No role found for user, defaulting to non-admin')
-          setIsAdmin(false)
           router.push('/dashboard')
           return
         }
 
-        const isUserAdmin = roleData.role === 'admin'
-        setIsAdmin(isUserAdmin)
-
-        if (!isUserAdmin) {
+        if (!roleData || roleData.role !== 'admin') {
           console.log('User is not admin, redirecting to dashboard')
           router.push('/dashboard')
+          return
         }
+
+        setIsAdmin(true)
       } catch (err) {
         console.error('Error in auth check:', err)
         setError('Error checking authentication status')
+        router.push('/dashboard')
       } finally {
         setIsLoading(false)
       }
     }
 
     checkAuth()
-  }, [router])
+  }, [session, router, supabase])
 
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -87,10 +75,7 @@ export default function InviteUserPage() {
     try {
       console.log('Starting invitation process for:', email)
       
-      // Get fresh session token
-      const { data: { session: currentSession } } = await supabase.auth.getSession()
-      
-      if (!currentSession) {
+      if (!session) {
         throw new Error('No active session')
       }
 
@@ -98,7 +83,7 @@ export default function InviteUserPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${currentSession.access_token}`
+          'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify({ email }),
         credentials: 'include'
@@ -131,6 +116,7 @@ export default function InviteUserPage() {
     }
   }
 
+  // Loading state
   if (isLoading) {
     return (
       <div className="p-6 max-w-2xl mx-auto">
@@ -142,11 +128,19 @@ export default function InviteUserPage() {
     )
   }
 
+  // Non-admin state
   if (!isAdmin) {
-    console.log('Not rendering page - user is not admin')
-    return null
+    return (
+      <div className="p-6 max-w-2xl mx-auto">
+        <Header />
+        <div className="mt-8 text-center">
+          Redirecting...
+        </div>
+      </div>
+    )
   }
 
+  // Main render
   return (
     <div className="p-6 max-w-2xl mx-auto">
       <Header />

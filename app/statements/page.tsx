@@ -447,10 +447,20 @@ function StatementsContent() {
                         }))
                     ]
                     .sort((a, b) => sortAscending ? a.date.localeCompare(b.date) : b.date.localeCompare(a.date))
-                    .reduce((acc, item, index) => {
-                      const runningBalance = index === 0 
-                        ? item.amount 
-                        : acc[index - 1].runningBalance + item.amount;
+                    .reduce((acc, item, index, array) => {
+                      let runningBalance;
+                      if (sortAscending) {
+                        // For ascending order, calculate from oldest to newest
+                        runningBalance = index === 0 
+                          ? item.amount 
+                          : acc[index - 1].runningBalance + item.amount;
+                      } else {
+                        // For descending order, calculate from newest to oldest
+                        const totalBalance = array.reduce((sum, t) => sum + t.amount, 0);
+                        runningBalance = totalBalance - array
+                          .slice(0, index)
+                          .reduce((sum, t) => sum + t.amount, 0);
+                      }
                       return [...acc, { ...item, runningBalance }];
                     }, [] as Array<any>)
                     .map((item, idx) => (

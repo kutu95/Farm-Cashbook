@@ -1,0 +1,1 @@
+\d auth.audit_log_entries; 

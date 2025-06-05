@@ -13,20 +13,6 @@ export default function DashboardPage() {
   const [partyBalances, setPartyBalances] = useState<any[]>([])
   const [isAdmin, setIsAdmin] = useState(false)
 
-  useEffect(() => {
-    console.log('Session changed:', { hasUser: !!session?.user })
-    if (session?.user) {
-      loadBalances()
-      checkAdminStatus()
-    } else {
-      setIsAdmin(false)
-    }
-  }, [session])
-
-  useEffect(() => {
-    console.log('isAdmin state changed:', isAdmin)
-  }, [isAdmin])
-
   const checkAdminStatus = async () => {
     if (!session?.user?.id) {
       console.log('No user session')
@@ -72,6 +58,8 @@ export default function DashboardPage() {
   }
 
   const loadBalances = async () => {
+    if (!session?.user) return
+
     try {
       // Get all parties with their total payments and expenses in a single query
       const { data: balances, error } = await supabase
@@ -105,6 +93,26 @@ export default function DashboardPage() {
       console.error('Error in loadBalances:', err)
     }
   }
+
+  // Combine admin check and balance loading into a single effect
+  useEffect(() => {
+    const initializeDashboard = async () => {
+      console.log('Session changed:', { hasUser: !!session?.user })
+      if (session?.user) {
+        await checkAdminStatus()
+        await loadBalances()
+      } else {
+        setIsAdmin(false)
+        setPartyBalances([])
+      }
+    }
+
+    initializeDashboard()
+  }, [session]) // We don't need to include checkAdminStatus and loadBalances as they're defined inside the component
+
+  useEffect(() => {
+    console.log('isAdmin state changed:', isAdmin)
+  }, [isAdmin])
 
   return (
     <div className="p-6 max-w-[1200px] mx-auto">
@@ -140,24 +148,48 @@ export default function DashboardPage() {
       <div className="flex flex-wrap gap-4">
         {isAdmin && (
           <>
-            <Link href="/add-payment" className="flex items-center bg-blue-500 text-white px-4 py-2 rounded">
+            <Link 
+              href="/add-payment" 
+              className="flex items-center bg-blue-500 text-white px-4 py-2 rounded"
+              onClick={() => console.log('Navigating to add payment')}
+            >
               <DollarSign className="mr-2" /> Add Payment
             </Link>
-            <Link href="/add-expense" className="flex items-center bg-green-500 text-white px-4 py-2 rounded">
+            <Link 
+              href="/add-expense" 
+              className="flex items-center bg-green-500 text-white px-4 py-2 rounded"
+              onClick={() => console.log('Navigating to add expense')}
+            >
               <PlusCircle className="mr-2" /> Add Expense
             </Link>
-            <Link href="/manage-parties" className="flex items-center bg-purple-500 text-white px-4 py-2 rounded">
+            <Link 
+              href="/manage-parties" 
+              className="flex items-center bg-purple-500 text-white px-4 py-2 rounded"
+              onClick={() => console.log('Navigating to manage parties')}
+            >
               <Users className="mr-2" /> Manage Parties
             </Link>
-            <Link href="/manage-roles" className="flex items-center bg-yellow-500 text-white px-4 py-2 rounded">
+            <Link 
+              href="/manage-roles" 
+              className="flex items-center bg-yellow-500 text-white px-4 py-2 rounded"
+              onClick={() => console.log('Navigating to manage roles')}
+            >
               <Shield className="mr-2" /> Manage Roles
             </Link>
-            <Link href="/dashboard/admin/invite" className="flex items-center bg-indigo-500 text-white px-4 py-2 rounded">
+            <Link 
+              href="/dashboard/admin/invite" 
+              className="flex items-center bg-indigo-500 text-white px-4 py-2 rounded"
+              onClick={() => console.log('Navigating to invite user')}
+            >
               <Users className="mr-2" /> Invite User
             </Link>
           </>
         )}
-        <Link href="/statements" className="flex items-center bg-gray-500 text-white px-4 py-2 rounded">
+        <Link 
+          href="/statements" 
+          className="flex items-center bg-gray-500 text-white px-4 py-2 rounded"
+          onClick={() => console.log('Navigating to statements')}
+        >
           <FileText className="mr-2" /> Statements
         </Link>
       </div>
