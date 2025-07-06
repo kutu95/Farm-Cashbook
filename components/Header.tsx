@@ -5,6 +5,8 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
+import AdminSubmenu from './AdminSubmenu'
+import BooksSubmenu from './BooksSubmenu'
 
 export default function Header() {
   const router = useRouter()
@@ -36,14 +38,8 @@ export default function Header() {
       <nav style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
         {session ? (
           <>
-            {isAdmin && (
-              <>
-                <Link href="/manage-roles">Manage Roles</Link>
-                <Link href="/manage-parties">Manage Parties</Link>
-                <Link href="/dashboard/admin/invite">Invite User</Link>
-                <Link href="/audit-logs" style={{ color: '#2563eb' }}>Audit Logs</Link>
-              </>
-            )}
+            <BooksSubmenu variant="header" isAdmin={isAdmin} />
+            <AdminSubmenu isAdmin={isAdmin} variant="header" />
             <Link href="/dashboard/profile">My Profile</Link>
             <button 
               onClick={signOut} 

@@ -2,6 +2,8 @@ import { ReactNode, useEffect, useState } from 'react'
 import LogoutButton from './LogoutButton'
 import Link from 'next/link'
 import { useAuth } from '@/context/AuthContext'
+import AdminSubmenu from './AdminSubmenu'
+import BooksSubmenu from './BooksSubmenu'
 
 export default function DashboardShell({ children }: { children: ReactNode }) {
   const { supabase, session } = useAuth()
@@ -31,20 +33,9 @@ export default function DashboardShell({ children }: { children: ReactNode }) {
       <aside style={{ width: '220px', background: '#f4f4f4', padding: '1rem' }}>
         <h2>Farm Cashbook</h2>
         <nav style={{ marginTop: '2rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <Link href="/dashboard">Dashboard</Link>
-          <Link href="/expenses">Expenses</Link>
-          <Link href="/payments">Payments</Link>
-          <Link href="/parties">Parties</Link>
-          <Link href="/statement">Statements</Link>
+          <BooksSubmenu variant="sidebar" isAdmin={isAdmin} />
           <Link href="/dashboard/profile">Profile</Link>
-          {isAdmin && (
-            <>
-              <Link href="/manage-roles">Manage Roles</Link>
-              <Link href="/manage-parties">Manage Parties</Link>
-              <Link href="/dashboard/admin/invite">Invite User</Link>
-              <Link href="/audit-logs" className="text-blue-600">Audit Logs</Link>
-            </>
-          )}
+          <AdminSubmenu isAdmin={isAdmin} variant="sidebar" />
         </nav>
         <div style={{ marginTop: 'auto', paddingTop: '2rem' }}>
           <LogoutButton />

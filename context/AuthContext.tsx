@@ -40,7 +40,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setSession(newSession)
 
           if (event === 'SIGNED_OUT') {
-            router.push('/login')
+            router.push('/dashboard')
           } else if (event === 'SIGNED_IN') {
             router.refresh()
           }
@@ -62,7 +62,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = async () => {
     try {
       await supabase.auth.signOut()
-      router.push('/login')
+      router.push('/dashboard')
     } catch (error) {
       console.error('Error signing out:', error)
     }
