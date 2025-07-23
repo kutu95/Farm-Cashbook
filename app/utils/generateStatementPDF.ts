@@ -55,7 +55,7 @@ export function generateStatementPDF(data: StatementData): Buffer | Uint8Array {
   doc.setFontSize(12)
   doc.text('Pay by direct deposit to', 105, 160, { align: 'center' })
   doc.text('Account name: Landlife Pty Ltd', 105, 170, { align: 'center' })
-  doc.text('BSB: 67873', 105, 180, { align: 'center' })
+  doc.text('BSB: 067873', 105, 180, { align: 'center' })
   doc.text('Account number: 16670344', 105, 190, { align: 'center' })
   
   // Contact info
