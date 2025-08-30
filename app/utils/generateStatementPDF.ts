@@ -11,6 +11,7 @@ interface StatementData {
   partyName: string
   closingBalance: number
   transactions: Transaction[]
+  logoImage?: string // Base64 encoded image data
 }
 
 export function formatCurrency(amount: number): string {
@@ -29,25 +30,34 @@ export function generateStatementPDF(data: StatementData): Buffer | Uint8Array {
   doc.setFont('helvetica')
   
   // Cover page
+  // Add logo if provided
+  if (data.logoImage) {
+    try {
+      doc.addImage(data.logoImage, 'PNG', 90, 20, 30, 30)
+    } catch (error) {
+      console.warn('Failed to add logo to PDF:', error)
+    }
+  }
+  
   doc.setFontSize(24)
-  doc.text('Landlife Statement', 105, 40, { align: 'center' })
+  doc.text('Landlife Statement', 105, 60, { align: 'center' })
   
   doc.setFontSize(18)
-  doc.text(`For ${data.partyName}`, 105, 60, { align: 'center' })
+  doc.text(`For ${data.partyName}`, 105, 80, { align: 'center' })
   
   doc.setFontSize(12)
   const currentDate = new Date().toLocaleString('en-AU', {
     dateStyle: 'full',
     timeStyle: 'short'
   })
-  doc.text(`Issued at ${currentDate}`, 105, 80, { align: 'center' })
+  doc.text(`Issued at ${currentDate}`, 105, 100, { align: 'center' })
   
   // Balance
   doc.setFontSize(14)
   doc.text(
     `Your current balance: ${formatCurrency(data.closingBalance)}`,
     105,
-    120,
+    140,
     { align: 'center' }
   )
   

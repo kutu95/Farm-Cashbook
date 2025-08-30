@@ -33,9 +33,13 @@ export default function Header() {
   }, [session, supabase])
 
   return (
-    <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '1rem' }}>
-      <Link href="/"><strong>Farm Cashbook</strong></Link>
-      <nav style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+    <header style={{ paddingBottom: '1rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+        <Link href="/dashboard" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', textDecoration: 'none', color: 'inherit' }}>
+          <img src="/icon-192.png" alt="Farm Cashbook Logo" style={{ width: '32px', height: '32px' }} />
+          <span style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#16a34a' }}>Farm Cashbook</span>
+        </Link>
+        <nav style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
         {session ? (
           <>
             <BooksSubmenu variant="header" isAdmin={isAdmin} />
@@ -52,9 +56,10 @@ export default function Header() {
           <>
             <Link href="/login">Login</Link>
             <Link href="/signup">Signup</Link>
-          </>
-        )}
-      </nav>
+                      </>
+          )}
+        </nav>
+      </div>
     </header>
   )
 }

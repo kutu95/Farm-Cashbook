@@ -53,7 +53,7 @@ function StatementsContent() {
   const [error, setError] = useState("")
   const [isAdmin, setIsAdmin] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
-  const [sortAscending, setSortAscending] = useState(true)
+  const [sortAscending, setSortAscending] = useState(false)
 
   useEffect(() => { 
     if (!authLoading && session?.user) {
@@ -200,8 +200,22 @@ function StatementsContent() {
     }
   }
 
-  const generatePDF = () => {
+  const generatePDF = async () => {
     const party = parties.find(p => p.id === partyId)
+    
+    // Convert logo to base64
+    let logoBase64 = ''
+    try {
+      const response = await fetch(`/icon-512-statement.png?v=${Date.now()}`)
+      const blob = await response.blob()
+      const reader = new FileReader()
+      logoBase64 = await new Promise((resolve) => {
+        reader.onloadend = () => resolve(reader.result as string)
+        reader.readAsDataURL(blob)
+      })
+    } catch (error) {
+      console.warn('Failed to load logo for PDF:', error)
+    }
     
     // Prepare transactions data
     const transactions = [
@@ -235,7 +249,8 @@ function StatementsContent() {
     const doc = generateStatementPDF({
       partyName: party?.name || '',
       closingBalance: balance,
-      transactions
+      transactions,
+      logoImage: logoBase64
     })
 
     // Save PDF
@@ -377,7 +392,7 @@ function StatementsContent() {
                 <h2 className="text-xl font-semibold">Statement Details</h2>
                 <div className="space-x-2">
                   <button
-                    onClick={generatePDF}
+                    onClick={() => generatePDF()}
                     className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
                   >
                     Export PDF
@@ -403,7 +418,7 @@ function StatementsContent() {
                             className="text-gray-500 hover:text-gray-700"
                             title={sortAscending ? "Sort Descending" : "Sort Ascending"}
                           >
-                            {sortAscending ? "↑" : "↓"}
+                            {sortAscending ? "↓" : "↑"}
                           </button>
                         </div>
                       </th>
