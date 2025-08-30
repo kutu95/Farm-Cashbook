@@ -34,31 +34,81 @@ export default function Header() {
 
   return (
     <header style={{ paddingBottom: '1rem' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-        <Link href="/dashboard" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', textDecoration: 'none', color: 'inherit' }}>
+      {/* Logo and title - always on top */}
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        marginBottom: '1rem',
+        padding: '0.5rem 0'
+      }}>
+        <Link href="/dashboard" style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: '0.5rem', 
+          textDecoration: 'none', 
+          color: 'inherit' 
+        }}>
           <img src="/icon-192.png" alt="Farm Cashbook Logo" style={{ width: '32px', height: '32px' }} />
           <span style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#16a34a' }}>Farm Cashbook</span>
         </Link>
-        <nav style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+      </div>
+      
+      {/* Navigation menu - below logo on mobile, side by side on desktop */}
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'center', 
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: '0.5rem'
+      }}>
         {session ? (
           <>
             <BooksSubmenu variant="header" isAdmin={isAdmin} />
             <AdminSubmenu isAdmin={isAdmin} variant="header" />
-            <Link href="/dashboard/profile">My Profile</Link>
+            <Link href="/dashboard/profile" style={{ 
+              padding: '0.5rem 1rem',
+              borderRadius: '0.375rem',
+              backgroundColor: '#f3f4f6',
+              color: '#374151',
+              textDecoration: 'none',
+              fontSize: '0.875rem'
+            }}>My Profile</Link>
             <button 
               onClick={signOut} 
-              style={{ background: 'none', border: 'none', color: 'blue', cursor: 'pointer' }}
+              style={{ 
+                padding: '0.5rem 1rem',
+                borderRadius: '0.375rem',
+                backgroundColor: '#ef4444',
+                color: 'white',
+                border: 'none',
+                cursor: 'pointer',
+                fontSize: '0.875rem'
+              }}
             >
               Logout
             </button>
           </>
         ) : (
           <>
-            <Link href="/login">Login</Link>
-            <Link href="/signup">Signup</Link>
-                      </>
-          )}
-        </nav>
+            <Link href="/login" style={{ 
+              padding: '0.5rem 1rem',
+              borderRadius: '0.375rem',
+              backgroundColor: '#3b82f6',
+              color: 'white',
+              textDecoration: 'none',
+              fontSize: '0.875rem'
+            }}>Login</Link>
+            <Link href="/signup" style={{ 
+              padding: '0.5rem 1rem',
+              borderRadius: '0.375rem',
+              backgroundColor: '#10b981',
+              color: 'white',
+              textDecoration: 'none',
+              fontSize: '0.875rem'
+            }}>Signup</Link>
+          </>
+        )}
       </div>
     </header>
   )
