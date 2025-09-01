@@ -7,7 +7,7 @@ import { cookies } from 'next/headers'
 const publicPaths = ['/login', '/signup', '/forgot-password', '/reset-password']
 
 // List of admin-only paths
-const adminPaths = ['/dashboard/admin', '/api/admin', '/api/admin/invite', '/manage-roles', '/manage-parties', '/add-expense', '/add-payment', '/dashboard/admin/invite', '/audit-logs', '/publishing']
+const adminPaths = ['/dashboard/admin', '/api/admin', '/api/admin/invite', '/manage-roles', '/manage-parties', '/add-expense', '/add-payment', '/dashboard/admin/invite', '/audit-logs', '/publishing', '/electricity-bills', '/electricity-usage-graph']
 
 export async function middleware(req: NextRequest) {
   let response = NextResponse.next({
