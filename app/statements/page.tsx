@@ -54,6 +54,8 @@ function StatementsContent() {
   const [isAdmin, setIsAdmin] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
   const [sortAscending, setSortAscending] = useState(false)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [rowsPerPage, setRowsPerPage] = useState(10)
 
   useEffect(() => { 
     if (!authLoading && session?.user) {
