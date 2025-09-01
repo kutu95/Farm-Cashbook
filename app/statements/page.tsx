@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, Suspense } from "react"
+import { useEffect, useState, Suspense, useMemo } from "react"
 import { useSearchParams } from "next/navigation"
 import Header from "@/components/Header"
 import jsPDF from "jspdf"
@@ -56,6 +56,67 @@ function StatementsContent() {
   const [sortAscending, setSortAscending] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
   const [rowsPerPage, setRowsPerPage] = useState(10)
+
+  // Reset pagination when filters/sort/search change
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [startDate, endDate, searchTerm, sortAscending])
+
+  // Build filtered + sorted transactions with running balance
+  const computedTransactions = useMemo(() => {
+    const combined = [
+      ...rawExpenses
+        .filter(expense => 
+          expense.expenses &&
+          (!startDate || expense.expenses.expense_date >= startDate) &&
+          (!endDate || expense.expenses.expense_date <= endDate) &&
+          (!searchTerm || expense.expenses.description.toLowerCase().includes(searchTerm.toLowerCase()))
+        )
+        .map(expense => ({
+          date: expense.expenses.expense_date,
+          description: expense.expenses.description,
+          type: 'Expense' as const,
+          amount: -expense.allocated_amount,
+          id: expense.expenses.id,
+          isExpense: true
+        })),
+      ...rawPayments
+        .filter(payment => 
+          (!startDate || payment.payment_date >= startDate) &&
+          (!endDate || payment.payment_date <= endDate) &&
+          (!searchTerm || (payment.description || '').toLowerCase().includes(searchTerm.toLowerCase()))
+        )
+        .map(payment => ({
+          date: payment.payment_date,
+          description: payment.description || 'Payment',
+          type: 'Payment' as const,
+          amount: payment.amount,
+          id: payment.id,
+          isExpense: false
+        }))
+    ].sort((a, b) => sortAscending ? a.date.localeCompare(b.date) : b.date.localeCompare(a.date))
+
+    // Calculate running balance depending on sort direction
+    const withRunning = combined.reduce((acc, item, index, array) => {
+      let runningBalance
+      if (sortAscending) {
+        runningBalance = index === 0 ? item.amount : acc[index - 1].runningBalance + item.amount
+      } else {
+        const totalBalance = array.reduce((sum, t) => sum + t.amount, 0)
+        runningBalance = totalBalance - array.slice(0, index).reduce((sum, t) => sum + t.amount, 0)
+      }
+      return [...acc, { ...item, runningBalance }]
+    }, [] as Array<any>)
+
+    return withRunning
+  }, [rawExpenses, rawPayments, startDate, endDate, searchTerm, sortAscending])
+
+  // Pagination calculations
+  const totalRows = computedTransactions.length
+  const totalPages = Math.max(1, Math.ceil(totalRows / rowsPerPage))
+  const startIndex = (currentPage - 1) * rowsPerPage
+  const endIndex = Math.min(startIndex + rowsPerPage, totalRows)
+  const paginatedTransactions = computedTransactions.slice(startIndex, endIndex)
 
   useEffect(() => { 
     if (!authLoading && session?.user) {
@@ -431,56 +492,7 @@ function StatementsContent() {
                     </tr>
                   </thead>
                   <tbody>
-                    {/* Combine and sort expenses and payments */}
-                    {[
-                      ...rawExpenses
-                        .filter(expense => 
-                          expense.expenses &&
-                          (!startDate || expense.expenses.expense_date >= startDate) &&
-                          (!endDate || expense.expenses.expense_date <= endDate) &&
-                          (!searchTerm || expense.expenses.description.toLowerCase().includes(searchTerm.toLowerCase()))
-                        )
-                        .map(expense => ({
-                          date: expense.expenses.expense_date,
-                          description: expense.expenses.description,
-                          type: 'Expense',
-                          amount: -expense.allocated_amount,
-                          id: expense.expenses.id,
-                          isExpense: true
-                        })),
-                      ...rawPayments
-                        .filter(payment => 
-                          (!startDate || payment.payment_date >= startDate) &&
-                          (!endDate || payment.payment_date <= endDate) &&
-                          (!searchTerm || (payment.description || '').toLowerCase().includes(searchTerm.toLowerCase()))
-                        )
-                        .map(payment => ({
-                          date: payment.payment_date,
-                          description: payment.description || 'Payment',
-                          type: 'Payment',
-                          amount: payment.amount,
-                          id: payment.id,
-                          isExpense: false
-                        }))
-                    ]
-                    .sort((a, b) => sortAscending ? a.date.localeCompare(b.date) : b.date.localeCompare(a.date))
-                    .reduce((acc, item, index, array) => {
-                      let runningBalance;
-                      if (sortAscending) {
-                        // For ascending order, calculate from oldest to newest
-                        runningBalance = index === 0 
-                          ? item.amount 
-                          : acc[index - 1].runningBalance + item.amount;
-                      } else {
-                        // For descending order, calculate from newest to oldest
-                        const totalBalance = array.reduce((sum, t) => sum + t.amount, 0);
-                        runningBalance = totalBalance - array
-                          .slice(0, index)
-                          .reduce((sum, t) => sum + t.amount, 0);
-                      }
-                      return [...acc, { ...item, runningBalance }];
-                    }, [] as Array<any>)
-                    .map((item, idx) => (
+                    {paginatedTransactions.map((item, idx) => (
                       <tr key={`${item.type}-${idx}`} className="border-t">
                         <td className="px-4 py-2">
                           {isAdmin && item.id ? (
@@ -515,6 +527,46 @@ function StatementsContent() {
                     </tr>
                   </tfoot>
                 </table>
+              </div>
+
+              {/* Pagination Controls */}
+              <div className="flex items-center justify-between p-4 bg-gray-50 border border-gray-200 border-t-0 rounded-b">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-500">Rows per page:</span>
+                  <select
+                    value={rowsPerPage}
+                    onChange={(e) => {
+                      setRowsPerPage(Number(e.target.value))
+                      setCurrentPage(1)
+                    }}
+                    className="border rounded px-2 py-1 text-sm bg-white"
+                  >
+                    <option value={5}>5</option>
+                    <option value={10}>10</option>
+                    <option value={25}>25</option>
+                    <option value={50}>50</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-500">
+                    {totalRows === 0 ? '0-0 of 0' : `${startIndex + 1}-${endIndex} of ${totalRows}`}
+                  </span>
+                  <button
+                    onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                    disabled={currentPage === 1}
+                    className={`border rounded px-2 py-1 text-sm ${currentPage === 1 ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-white'}`}
+                  >
+                    Previous
+                  </button>
+                  <button
+                    onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+                    disabled={currentPage === totalPages}
+                    className={`border rounded px-2 py-1 text-sm ${currentPage === totalPages ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-white'}`}
+                  >
+                    Next
+                  </button>
+                </div>
               </div>
             </div>
           )}
