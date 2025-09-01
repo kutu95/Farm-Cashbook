@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { ChevronDown, ChevronUp, Shield, Users, UserPlus, FileText, Zap, BarChart3 } from 'lucide-react'
+import { ChevronDown, ChevronUp, Shield, Users, UserPlus, FileText } from 'lucide-react'
 
 interface AdminSubmenuProps {
   isAdmin: boolean
@@ -20,8 +20,6 @@ export default function AdminSubmenu({ isAdmin, variant = 'header' }: AdminSubme
   { href: '/dashboard/admin/invite', label: 'Invite User', icon: UserPlus },
   { href: '/audit-logs', label: 'Audit Logs', icon: FileText },
   { href: '/publishing', label: 'Publishing', icon: FileText },
-  { href: '/electricity-bills', label: 'Electricity Bills', icon: Zap },
-  { href: '/electricity-usage-graph', label: 'Usage Graph', icon: BarChart3 },
 ]
 
   if (variant === 'sidebar') {

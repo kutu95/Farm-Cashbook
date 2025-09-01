@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { ChevronDown, ChevronUp, BarChart3, FileText, DollarSign, Users } from 'lucide-react'
+import { ChevronDown, ChevronUp, BarChart3, FileText, DollarSign, Users, Zap } from 'lucide-react'
 
 interface BooksSubmenuProps {
   variant?: 'header' | 'sidebar'
@@ -19,6 +19,8 @@ export default function BooksSubmenu({ variant = 'header', isAdmin = false }: Bo
       { href: '/add-payment', label: 'Payment', icon: DollarSign },
     ] : []),
     { href: '/statements', label: 'Statements', icon: FileText },
+    { href: '/electricity-bills', label: 'Electricity Bills', icon: Zap },
+    { href: '/electricity-usage-graph', label: 'Usage Graph', icon: BarChart3 },
   ]
 
   if (variant === 'sidebar') {
