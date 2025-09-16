@@ -31,15 +31,44 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script
           dangerouslySetInnerHTML={{
             __html: `
-              if ('serviceWorker' in navigator) {
+              if ('serviceWorker' in navigator && typeof window !== 'undefined') {
                 window.addEventListener('load', function() {
-                  navigator.serviceWorker.register('/sw.js')
-                    .then(function(registration) {
-                      console.log('SW registered: ', registration);
-                    })
-                    .catch(function(registrationError) {
-                      console.log('SW registration failed: ', registrationError);
+                  // Check if we're in development mode by looking at the hostname
+                  const isDevelopment = window.location.hostname === 'localhost' || 
+                                      window.location.hostname === '127.0.0.1' || 
+                                      window.location.hostname.includes('localhost');
+                  
+                  // Only register service worker in production or when explicitly enabled
+                  if (!isDevelopment || window.location.search.includes('sw=true')) {
+                    navigator.serviceWorker.register('/sw.js')
+                      .then(function(registration) {
+                        console.log('SW registered: ', registration);
+                        // Check for updates
+                        registration.addEventListener('updatefound', function() {
+                          const newWorker = registration.installing;
+                          if (newWorker) {
+                            newWorker.addEventListener('statechange', function() {
+                              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                                // New content is available, reload the page
+                                window.location.reload();
+                              }
+                            });
+                          }
+                        });
+                      })
+                      .catch(function(registrationError) {
+                        console.warn('SW registration failed: ', registrationError);
+                      });
+                  } else {
+                    console.log('Service worker registration skipped in development mode');
+                    // Unregister any existing service worker in development
+                    navigator.serviceWorker.getRegistrations().then(function(registrations) {
+                      for(let registration of registrations) {
+                        registration.unregister();
+                        console.log('Unregistered existing service worker');
+                      }
                     });
+                  }
                 });
               }
             `,

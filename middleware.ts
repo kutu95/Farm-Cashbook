@@ -4,7 +4,20 @@ import type { NextRequest } from 'next/server'
 import { cookies } from 'next/headers'
 
 // List of public paths that don't require authentication
-const publicPaths = ['/login', '/signup', '/forgot-password', '/reset-password']
+const publicPaths = [
+  '/login', 
+  '/signup', 
+  '/forgot-password', 
+  '/reset-password', 
+  '/manifest.json', 
+  '/sw.js',
+  '/favicon.ico',
+  '/apple-touch-icon.png',
+  '/icon-16.png',
+  '/icon-32.png',
+  '/icon-192.png',
+  '/icon-512.png'
+]
 
 // List of admin-only paths
 const adminPaths = ['/dashboard/admin', '/api/admin', '/api/admin/invite', '/manage-roles', '/manage-parties', '/add-expense', '/add-payment', '/dashboard/admin/invite', '/audit-logs', '/publishing']
