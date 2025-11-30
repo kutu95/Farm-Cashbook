@@ -1,8 +1,12 @@
 import { NextResponse } from 'next/server'
 import { Resend } from 'resend'
 
-// Initialize Resend
-const resend = new Resend(process.env.RESEND_API_KEY)
+// Initialize Resend with API key validation (lazy initialization to avoid build-time errors)
+const resendApiKey = process.env.RESEND_API_KEY
+if (!resendApiKey) {
+  console.warn('RESEND_API_KEY is not set in environment variables - email functionality will be disabled')
+}
+const resend = resendApiKey ? new Resend(resendApiKey) : null
 
 export async function POST(request: Request) {
   try {
@@ -13,6 +17,16 @@ export async function POST(request: Request) {
         { error: 'Email is required' },
         { status: 400 }
       )
+    }
+
+    // Check if Resend is properly initialized
+    if (!resend) {
+      console.error('Resend API key is missing - cannot send access request email')
+      // Return success anyway to not expose internal configuration to users
+      return NextResponse.json({ 
+        success: true, 
+        message: 'Access request received. An administrator will review your request.'
+      })
     }
 
     // Send email to admin

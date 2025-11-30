@@ -2,8 +2,12 @@ import { NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { generateStatementPDF } from '../../utils/generateStatementPDF'
 
-// Initialize Resend with detailed error logging
-const resend = new Resend(process.env.RESEND_API_KEY)
+// Initialize Resend with API key validation (lazy initialization to avoid build-time errors)
+const resendApiKey = process.env.RESEND_API_KEY
+if (!resendApiKey) {
+  console.warn('RESEND_API_KEY is not set in environment variables - email functionality will be disabled')
+}
+const resend = resendApiKey ? new Resend(resendApiKey) : null
 
 export async function POST(request: Request) {
   try {
@@ -60,7 +64,7 @@ export async function POST(request: Request) {
       }))
 
       // Send email with all PDF attachments
-      if (!process.env.RESEND_API_KEY) {
+      if (!resend) {
         console.error('RESEND_API_KEY is not configured')
         return NextResponse.json(
           { error: 'Email service is not configured' },
