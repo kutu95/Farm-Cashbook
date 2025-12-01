@@ -1,8 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Set basePath for subpath hosting (e.g., /cashbook)
-  // Set to empty string '' for root, or '/cashbook' for subpath
-  basePath: process.env.NEXT_PUBLIC_BASE_PATH || '/cashbook',
+  // basePath: Use empty string - Nginx handles /cashbook prefix stripping
+  // This allows the app to work at both /cashbook (via Nginx) and root (when using domain)
+  basePath: process.env.NEXT_PUBLIC_BASE_PATH || '',
   
   typescript: {
     // Temporarily ignore build errors caused by Deno Edge Functions
