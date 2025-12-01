@@ -13,7 +13,11 @@ function LoginContent() {
   const [loading, setLoading] = useState(false)
   const router = useRouter()
   const searchParams = useSearchParams()
-  const redirectTo = searchParams.get("redirectTo") || "/dashboard"
+  // Get redirectTo and remove /cashbook prefix if present (for backward compatibility)
+  let redirectTo = searchParams.get("redirectTo") || "/dashboard"
+  if (redirectTo.startsWith("/cashbook")) {
+    redirectTo = redirectTo.replace("/cashbook", "") || "/dashboard"
+  }
   const message = searchParams.get("message")
 
   useEffect(() => {

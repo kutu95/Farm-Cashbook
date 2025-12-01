@@ -24,8 +24,8 @@ if (isDevelopment) {
 
   // Fetch event - just pass through in development
   self.addEventListener('fetch', (event) => {
-    // Don't intercept requests in development
-    return;
+    // Don't intercept requests in development - just let them pass through
+    // No return statement needed - event listener just doesn't call respondWith
   });
 
   // Activate event - clean up and claim clients
@@ -44,7 +44,8 @@ if (isDevelopment) {
     );
   });
   
-  return; // Exit early in development mode
+  // Exit early in development mode - no need to register production handlers
+  // The event listeners above will handle everything in dev mode
 }
 
 // Install event - cache resources with error handling
