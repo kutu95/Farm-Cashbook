@@ -1,5 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Set basePath for subpath hosting (e.g., /cashbook)
+  // Set to empty string '' for root, or '/cashbook' for subpath
+  basePath: process.env.NEXT_PUBLIC_BASE_PATH || '/cashbook',
+  
   typescript: {
     // Temporarily ignore build errors caused by Deno Edge Functions
     ignoreBuildErrors: true,
