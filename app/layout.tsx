@@ -18,7 +18,11 @@ export const metadata = {
     ],
   },
   manifest: '/manifest.json',
-  viewport: 'width=device-width, initial-scale=1',
+}
+
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
   themeColor: '#16a34a',
 }
 
@@ -40,7 +44,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   
                   // Only register service worker in production or when explicitly enabled
                   if (!isDevelopment || window.location.search.includes('sw=true')) {
-                    navigator.serviceWorker.register('/sw.js')
+                    // Detect basePath from current URL path
+                    const pathParts = window.location.pathname.split('/').filter(p => p);
+                    const basePath = pathParts.length > 0 && pathParts[0] !== 'dashboard' && pathParts[0] !== 'login' 
+                      ? '/' + pathParts[0] 
+                      : '';
+                    navigator.serviceWorker.register((basePath || '') + '/sw.js')
                       .then(function(registration) {
                         console.log('SW registered: ', registration);
                         // Check for updates
