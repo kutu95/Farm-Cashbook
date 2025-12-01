@@ -32,7 +32,7 @@ export default function DashboardShell({ children }: { children: ReactNode }) {
     <div style={{ display: 'flex', minHeight: '100vh' }}>
       <aside style={{ width: '220px', background: '#f4f4f4', padding: '1rem' }}>
         <Link href="/dashboard" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', textDecoration: 'none', color: 'inherit', marginBottom: '1rem' }}>
-          <img src="/icon-192.png" alt="Farm Cashbook Logo" style={{ width: '32px', height: '32px' }} />
+          <img src={`${process.env.NEXT_PUBLIC_BASE_PATH || ''}/icon-192.png`} alt="Farm Cashbook Logo" style={{ width: '32px', height: '32px' }} />
           <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#16a34a', margin: 0 }}>Farm Cashbook</h2>
         </Link>
         <nav style={{ marginTop: '2rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>

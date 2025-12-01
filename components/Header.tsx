@@ -49,7 +49,7 @@ export default function Header() {
           textDecoration: 'none', 
           color: 'inherit' 
         }}>
-          <img src="/icon-192.png" alt="Farm Cashbook Logo" style={{ width: '32px', height: '32px' }} />
+          <img src={`${process.env.NEXT_PUBLIC_BASE_PATH || ''}/icon-192.png`} alt="Farm Cashbook Logo" style={{ width: '32px', height: '32px' }} />
           <span style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#16a34a' }}>Farm Cashbook</span>
         </Link>
       </div>
