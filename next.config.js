@@ -2,8 +2,9 @@
 const nextConfig = {
   // basePath: Use /cashbook for subpath hosting
   // When you get a domain, set NEXT_PUBLIC_BASE_PATH='' and rebuild
-  // Check if USE_DOMAIN is true first, then check NEXT_PUBLIC_BASE_PATH
-  basePath: process.env.USE_DOMAIN === 'true' 
+  // For books.landlife.au domain, use empty basePath
+  // Temporarily hardcoded to empty for domain hosting - change back to '/cashbook' for subpath
+  basePath: process.env.USE_DOMAIN === 'true' || process.env.NEXT_PUBLIC_BASE_PATH === ''
     ? '' 
     : (process.env.NEXT_PUBLIC_BASE_PATH !== undefined 
         ? process.env.NEXT_PUBLIC_BASE_PATH 
