@@ -1,4 +1,4 @@
-const CACHE_NAME = 'farm-cashbook-v1';
+const CACHE_NAME = 'farm-cashbook-v2'; // Updated to force cache refresh
 const urlsToCache = [
   '/',
   '/dashboard',
@@ -72,33 +72,32 @@ self.addEventListener('install', (event) => {
   );
 });
 
-// Fetch event - serve from cache when offline with better error handling
+// Fetch event - network-first for HTML, cache-first for static assets
 self.addEventListener('fetch', (event) => {
   // Only handle GET requests
   if (event.request.method !== 'GET') {
     return;
   }
 
-  event.respondWith(
-    caches.match(event.request)
-      .then((response) => {
-        // Return cached version if available
-        if (response) {
-          return response;
-        }
+  const url = new URL(event.request.url);
+  const isHTML = event.request.destination === 'document' || 
+                 event.request.headers.get('accept')?.includes('text/html');
+  const isStaticAsset = url.pathname.startsWith('/_next/static/') ||
+                       url.pathname.startsWith('/icon-') ||
+                       url.pathname.endsWith('.png') ||
+                       url.pathname.endsWith('.jpg') ||
+                       url.pathname.endsWith('.css') ||
+                       url.pathname.endsWith('.js') ||
+                       url.pathname === '/manifest.json';
 
-        // Otherwise fetch from network
-        return fetch(event.request)
-          .then((response) => {
-            // Check if we received a valid response
-            if (!response || response.status !== 200 || response.type !== 'basic') {
-              return response;
-            }
-
-            // Clone the response
+  // For HTML pages: Network-first strategy (always try network first)
+  if (isHTML) {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          // If network succeeds, update cache and return response
+          if (response && response.status === 200) {
             const responseToCache = response.clone();
-
-            // Cache the response for future use
             caches.open(CACHE_NAME)
               .then((cache) => {
                 cache.put(event.request, responseToCache);
@@ -106,16 +105,85 @@ self.addEventListener('fetch', (event) => {
               .catch(err => {
                 console.warn('Failed to cache response:', err);
               });
+          }
+          return response;
+        })
+        .catch((error) => {
+          // Network failed, try cache as fallback
+          console.warn('Network request failed, trying cache:', error);
+          return caches.match(event.request)
+            .then((cachedResponse) => {
+              if (cachedResponse) {
+                return cachedResponse;
+              }
+              // No cache available, return offline page
+              if (event.request.destination === 'document') {
+                return caches.match('/') || new Response('Offline - Please check your connection', { 
+                  status: 503,
+                  headers: { 'Content-Type': 'text/html' }
+                });
+              }
+              throw error;
+            });
+        })
+    );
+    return;
+  }
 
-            return response;
-          })
-          .catch((error) => {
-            console.warn('Fetch failed:', error);
-            // Return a fallback response for navigation requests
-            if (event.request.destination === 'document') {
-              return caches.match('/') || new Response('Offline', { status: 503 });
-            }
-            throw error;
+  // For static assets: Cache-first strategy (faster loading)
+  if (isStaticAsset) {
+    event.respondWith(
+      caches.match(event.request)
+        .then((cachedResponse) => {
+          if (cachedResponse) {
+            // Return cached version immediately
+            // Also fetch in background to update cache
+            fetch(event.request)
+              .then((response) => {
+                if (response && response.status === 200) {
+                  const responseToCache = response.clone();
+                  caches.open(CACHE_NAME)
+                    .then((cache) => {
+                      cache.put(event.request, responseToCache);
+                    });
+                }
+              })
+              .catch(() => {
+                // Ignore background fetch errors
+              });
+            return cachedResponse;
+          }
+
+          // Not in cache, fetch from network
+          return fetch(event.request)
+            .then((response) => {
+              if (response && response.status === 200) {
+                const responseToCache = response.clone();
+                caches.open(CACHE_NAME)
+                  .then((cache) => {
+                    cache.put(event.request, responseToCache);
+                  })
+                  .catch(err => {
+                    console.warn('Failed to cache response:', err);
+                  });
+              }
+              return response;
+            });
+        })
+    );
+    return;
+  }
+
+  // For other requests: Network-first
+  event.respondWith(
+    fetch(event.request)
+      .then((response) => {
+        return response;
+      })
+      .catch((error) => {
+        return caches.match(event.request)
+          .then((cachedResponse) => {
+            return cachedResponse || Promise.reject(error);
           });
       })
   );
