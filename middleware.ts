@@ -3,26 +3,30 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { cookies } from 'next/headers'
 
-// List of public paths that don't require authentication
+// List of public page paths that don't require authentication.
+// Static files are handled separately and must not be listed here:
+// a signed-in user on a public path is redirected to the dashboard,
+// which turned icon requests into HTML and broke the logo.
 const publicPaths = [
   '/login', 
   '/signup', 
   '/forgot-password', 
   '/reset-password', 
-  '/manifest.json', 
-  '/sw.js',
-  '/favicon.ico',
-  '/apple-touch-icon.png',
-  '/icon-16.png',
-  '/icon-32.png',
-  '/icon-192.png',
-  '/icon-512.png'
 ]
+
+const STATIC_ASSET_PATH = /\.(?:png|jpe?g|gif|webp|svg|ico|json|txt|xml|webmanifest|js|css|map|woff2?)$/i
 
 // List of admin-only paths
 const adminPaths = ['/dashboard/admin', '/api/admin', '/api/admin/invite', '/manage-roles', '/manage-parties', '/add-expense', '/add-payment', '/dashboard/admin/invite', '/audit-logs', '/publishing']
 
 export async function middleware(req: NextRequest) {
+  // Serve icons, the manifest, and the service worker as files.
+  // These must stay available after sign-in; otherwise the header logo
+  // and the manifest icons are redirected to an HTML page.
+  if (STATIC_ASSET_PATH.test(req.nextUrl.pathname)) {
+    return NextResponse.next()
+  }
+
   let response = NextResponse.next({
     request: {
       headers: req.headers,
@@ -128,9 +132,8 @@ export const config = {
      * Match all request paths except:
      * - _next/static (static files)
      * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * - public folder
+     * - favicon, icons, manifest, service worker, and other static files
      */
-    '/((?!_next/static|_next/image|favicon.ico|public/).*)',
+    '/((?!_next/static|_next/image|.*\\.(?:png|jpe?g|gif|webp|svg|ico|json|txt|xml|webmanifest|js|css|map|woff2?)$).*)',
   ],
 } 

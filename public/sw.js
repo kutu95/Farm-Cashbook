@@ -1,11 +1,26 @@
-const CACHE_NAME = 'farm-cashbook-v2'; // Updated to force cache refresh
+const CACHE_NAME = 'farm-cashbook-v3'; // Drop cached HTML that was stored for icon URLs
 const urlsToCache = [
-  '/',
-  '/dashboard',
   '/icon-192.png',
   '/icon-512.png',
+  '/apple-touch-icon.png',
   '/manifest.json'
 ];
+
+function isImageRequest(request) {
+  const pathname = new URL(request.url).pathname;
+  return request.destination === 'image' || /\.(?:png|jpe?g|gif|webp|svg|ico)$/i.test(pathname);
+}
+
+function isUsableAssetResponse(request, response) {
+  if (!response || response.status !== 200 || response.redirected) {
+    return false;
+  }
+  if (!isImageRequest(request)) {
+    return true;
+  }
+  const type = response.headers.get('content-type') || '';
+  return type.startsWith('image/');
+}
 
 // Check if we're in development mode
 const isDevelopment = self.location.hostname === 'localhost' || 
@@ -56,12 +71,20 @@ self.addEventListener('install', (event) => {
         console.log('Opened cache');
         // Cache resources individually to handle failures gracefully
         return Promise.allSettled(
-          urlsToCache.map(url => 
-            cache.add(url).catch(err => {
+          urlsToCache.map(async (url) => {
+            try {
+              const request = new Request(url);
+              const response = await fetch(request);
+              if (!isUsableAssetResponse(request, response)) {
+                console.warn(`Skipped caching ${url}: response is not a usable asset`);
+                return null;
+              }
+              await cache.put(request, response);
+            } catch (err) {
               console.warn(`Failed to cache ${url}:`, err);
-              return null; // Continue with other resources
-            })
-          )
+              return null;
+            }
+          })
         );
       })
       .then(() => {
@@ -135,12 +158,12 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       caches.match(event.request)
         .then((cachedResponse) => {
-          if (cachedResponse) {
+          if (cachedResponse && isUsableAssetResponse(event.request, cachedResponse)) {
             // Return cached version immediately
             // Also fetch in background to update cache
             fetch(event.request)
               .then((response) => {
-                if (response && response.status === 200) {
+                if (isUsableAssetResponse(event.request, response)) {
                   const responseToCache = response.clone();
                   caches.open(CACHE_NAME)
                     .then((cache) => {
@@ -154,10 +177,11 @@ self.addEventListener('fetch', (event) => {
             return cachedResponse;
           }
 
-          // Not in cache, fetch from network
+          // Not in cache, or the cached body is not a real image (for example
+          // an old redirect to the dashboard HTML). Fetch from the network.
           return fetch(event.request)
             .then((response) => {
-              if (response && response.status === 200) {
+              if (isUsableAssetResponse(event.request, response)) {
                 const responseToCache = response.clone();
                 caches.open(CACHE_NAME)
                   .then((cache) => {
