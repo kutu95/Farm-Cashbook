@@ -1,13 +1,20 @@
 "use client"
 
-import { useEffect, useState, Suspense, useMemo } from "react"
-import { useSearchParams } from "next/navigation"
+import { useEffect, useState, Suspense, useMemo, useRef } from "react"
+import { useSearchParams, useRouter, usePathname } from "next/navigation"
 import Header from "@/components/Header"
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
 import { useAuth } from "@/context/AuthContext"
 import Link from "next/link"
 import { generateStatementPDF } from "../utils/generateStatementPDF"
+import DocumentModal, { ElectricityBillInfo } from "@/components/DocumentModal"
+import { Paperclip } from "lucide-react"
+
+function parseSynergyAccount(description: string): string | null {
+  const match = description.match(/Synergy bill for\s+(\d+)/i)
+  return match?.[1] ?? null
+}
 
 interface Expense {
   id: string
@@ -30,6 +37,18 @@ interface Payment {
   party_id: string
 }
 
+interface Transaction {
+  date: string
+  description: string
+  type: 'Expense' | 'Payment'
+  amount: number
+  id: string
+  isExpense: boolean
+  party_id?: string
+  party_name?: string
+  runningBalance?: number
+}
+
 interface Party {
   id: string
   name: string
@@ -44,8 +63,10 @@ interface RawExpenseResponse {
 function StatementsContent() {
   const { supabase, session, loading: authLoading } = useAuth()
   const searchParams = useSearchParams()
+  const router = useRouter()
+  const pathname = usePathname()
   const [parties, setParties] = useState<Party[]>([])
-  const [partyId, setPartyId] = useState("")
+  const [partyId, setPartyId] = useState(() => searchParams.get('party') || "")
   const [startDate, setStartDate] = useState("")
   const [endDate, setEndDate] = useState("")
   const [rawExpenses, setRawExpenses] = useState<ExpenseAllocation[]>([])
@@ -56,15 +77,36 @@ function StatementsContent() {
   const [sortAscending, setSortAscending] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
   const [rowsPerPage, setRowsPerPage] = useState(10)
+  const [attachmentCounts, setAttachmentCounts] = useState<Record<string, number>>({})
+  const [electricityBillsByExpense, setElectricityBillsByExpense] = useState<Record<string, ElectricityBillInfo>>({})
+  const [modalOpen, setModalOpen] = useState(false)
+  const [modalExpenseId, setModalExpenseId] = useState<string | undefined>()
+  const [modalPaymentId, setModalPaymentId] = useState<string | undefined>()
+  const [modalDescription, setModalDescription] = useState<string>("")
+  const [modalElectricityBill, setModalElectricityBill] = useState<ElectricityBillInfo | null>(null)
+  const attachmentsTableMissing = useRef(false)
+  const loadRequestId = useRef(0)
 
   // Reset pagination when filters/sort/search change
   useEffect(() => {
     setCurrentPage(1)
-  }, [startDate, endDate, searchTerm, sortAscending])
+  }, [startDate, endDate, searchTerm, sortAscending, partyId])
 
-  // Build filtered + sorted transactions with running balance
+  const handlePartyChange = (newPartyId: string) => {
+    setPartyId(newPartyId)
+    const params = new URLSearchParams(searchParams.toString())
+    if (newPartyId) {
+      params.set('party', newPartyId)
+    } else {
+      params.delete('party')
+    }
+    const query = params.toString()
+    router.replace(query ? `${pathname}?${query}` : pathname)
+  }
+
+  // Build filtered + sorted transactions with running balance or party info
   const computedTransactions = useMemo(() => {
-    const combined = [
+    const combined: Transaction[] = [
       ...rawExpenses
         .filter(expense => 
           expense.expenses &&
@@ -72,44 +114,57 @@ function StatementsContent() {
           (!endDate || expense.expenses.expense_date <= endDate) &&
           (!searchTerm || expense.expenses.description.toLowerCase().includes(searchTerm.toLowerCase()))
         )
-        .map(expense => ({
-          date: expense.expenses.expense_date,
-          description: expense.expenses.description,
-          type: 'Expense' as const,
-          amount: -expense.allocated_amount,
-          id: expense.expenses.id,
-          isExpense: true
-        })),
+        .map(expense => {
+          const party = parties.find(p => p.id === expense.party_id)
+          return {
+            date: expense.expenses.expense_date,
+            description: expense.expenses.description,
+            type: 'Expense' as const,
+            amount: -expense.allocated_amount,
+            id: expense.expenses.id,
+            isExpense: true,
+            party_id: expense.party_id,
+            party_name: party?.name
+          }
+        }),
       ...rawPayments
         .filter(payment => 
           (!startDate || payment.payment_date >= startDate) &&
           (!endDate || payment.payment_date <= endDate) &&
           (!searchTerm || (payment.description || '').toLowerCase().includes(searchTerm.toLowerCase()))
         )
-        .map(payment => ({
-          date: payment.payment_date,
-          description: payment.description || 'Payment',
-          type: 'Payment' as const,
-          amount: payment.amount,
-          id: payment.id,
-          isExpense: false
-        }))
+        .map(payment => {
+          const party = parties.find(p => p.id === payment.party_id)
+          return {
+            date: payment.payment_date,
+            description: payment.description || 'Payment',
+            type: 'Payment' as const,
+            amount: payment.amount,
+            id: payment.id,
+            isExpense: false,
+            party_id: payment.party_id,
+            party_name: party?.name
+          }
+        })
     ].sort((a, b) => sortAscending ? a.date.localeCompare(b.date) : b.date.localeCompare(a.date))
 
-    // Calculate running balance depending on sort direction
-    const withRunning = combined.reduce((acc, item, index, array) => {
-      let runningBalance
-      if (sortAscending) {
-        runningBalance = index === 0 ? item.amount : acc[index - 1].runningBalance + item.amount
-      } else {
-        const totalBalance = array.reduce((sum, t) => sum + t.amount, 0)
-        runningBalance = totalBalance - array.slice(0, index).reduce((sum, t) => sum + t.amount, 0)
-      }
-      return [...acc, { ...item, runningBalance }]
-    }, [] as Array<any>)
+    // Calculate running balance only if a party is selected
+    if (partyId) {
+      const withRunning = combined.reduce((acc, item, index, array) => {
+        let runningBalance
+        if (sortAscending) {
+          runningBalance = index === 0 ? item.amount : acc[index - 1].runningBalance! + item.amount
+        } else {
+          const totalBalance = array.reduce((sum, t) => sum + t.amount, 0)
+          runningBalance = totalBalance - array.slice(0, index).reduce((sum, t) => sum + t.amount, 0)
+        }
+        return [...acc, { ...item, runningBalance }]
+      }, [] as Transaction[])
+      return withRunning
+    }
 
-    return withRunning
-  }, [rawExpenses, rawPayments, startDate, endDate, searchTerm, sortAscending])
+    return combined
+  }, [rawExpenses, rawPayments, startDate, endDate, searchTerm, sortAscending, partyId, parties])
 
   // Pagination calculations
   const totalRows = computedTransactions.length
@@ -117,6 +172,10 @@ function StatementsContent() {
   const startIndex = (currentPage - 1) * rowsPerPage
   const endIndex = Math.min(startIndex + rowsPerPage, totalRows)
   const paginatedTransactions = computedTransactions.slice(startIndex, endIndex)
+  const pageTransactionIds = useMemo(
+    () => paginatedTransactions.map(t => `${t.isExpense ? "e" : "p"}:${t.id}`).join(","),
+    [paginatedTransactions]
+  )
 
   useEffect(() => { 
     if (!authLoading && session?.user) {
@@ -124,16 +183,30 @@ function StatementsContent() {
     }
   }, [authLoading, session])
   
+  // Keep party filter in sync with ?party= URL (e.g. links from party names)
   useEffect(() => {
-    const urlPartyId = searchParams.get('party')
-    if (urlPartyId) {
-      setPartyId(urlPartyId)
-    }
+    setPartyId(searchParams.get('party') || "")
   }, [searchParams])
 
-  useEffect(() => { 
-    if (partyId) loadStatementsForParty(partyId) 
-  }, [partyId])
+  useEffect(() => {
+    if (authLoading || !session?.user) return
+
+    const requestId = ++loadRequestId.current
+    if (partyId) {
+      loadStatementsForParty(partyId, requestId)
+    } else {
+      loadAllTransactions(requestId)
+    }
+  }, [partyId, authLoading, session])
+
+  // Load attachment counts + Synergy bill matches for visible page only
+  useEffect(() => {
+    if (!pageTransactionIds) return
+    if (!attachmentsTableMissing.current) {
+      loadAttachmentCounts(paginatedTransactions)
+    }
+    loadElectricityBillMatches(paginatedTransactions)
+  }, [pageTransactionIds])
 
   useEffect(() => {
     if (!authLoading && session?.user) {
@@ -199,7 +272,7 @@ function StatementsContent() {
     }
   }
 
-  const loadStatementsForParty = async (partyId: string) => {
+  const loadStatementsForParty = async (selectedPartyId: string, requestId: number) => {
     try {
       setError('')
       const [expensesResponse, paymentsResponse] = await Promise.all([
@@ -215,13 +288,15 @@ function StatementsContent() {
             ),
             party_id
           `)
-          .eq("party_id", partyId),
+          .eq("party_id", selectedPartyId),
         supabase
           .from("payments")
           .select("*")
-          .eq("party_id", partyId)
+          .eq("party_id", selectedPartyId)
           .order("payment_date", { ascending: true })
       ])
+
+      if (requestId !== loadRequestId.current) return
 
       if (expensesResponse.error) {
         console.error('Expenses error:', expensesResponse.error)
@@ -259,8 +334,249 @@ function StatementsContent() {
       setRawPayments(paymentsResponse.data)
     } catch (err) {
       console.error('Error in loadStatementsForParty:', err)
-      setError('Failed to load statements')
+      if (requestId === loadRequestId.current) {
+        setError('Failed to load statements')
+      }
     }
+  }
+
+  const loadAllTransactions = async (requestId: number) => {
+    try {
+      setError('')
+      const [expensesResponse, paymentsResponse] = await Promise.all([
+        supabase
+          .from("expense_allocations")
+          .select(`
+            allocated_amount,
+            expense_id (
+              id,
+              description,
+              expense_date,
+              amount
+            ),
+            party_id
+          `),
+        supabase
+          .from("payments")
+          .select("*")
+          .order("payment_date", { ascending: true })
+      ])
+
+      if (requestId !== loadRequestId.current) return
+
+      if (expensesResponse.error) {
+        console.error('Expenses error:', expensesResponse.error)
+        setError(expensesResponse.error.message)
+        return
+      }
+
+      if (paymentsResponse.error) {
+        console.error('Payments error:', paymentsResponse.error)
+        setError(paymentsResponse.error.message)
+        return
+      }
+
+      console.log('All transactions loaded:', {
+        expenses: expensesResponse.data,
+        payments: paymentsResponse.data
+      })
+      
+      // Transform the raw response into the expected format with proper type casting
+      const transformedExpenses = ((expensesResponse.data as unknown) as RawExpenseResponse[]).map(item => ({
+        allocated_amount: item.allocated_amount,
+        expenses: item.expense_id,
+        party_id: item.party_id
+      }))
+
+      // Sort the transformed expenses
+      const sortedExpenses = transformedExpenses
+        .filter(expense => expense.expenses !== null)
+        .sort((a, b) => {
+          if (!a.expenses?.expense_date || !b.expenses?.expense_date) return 0
+          return a.expenses.expense_date.localeCompare(b.expenses.expense_date)
+        })
+      
+      setRawExpenses(sortedExpenses)
+      setRawPayments(paymentsResponse.data)
+    } catch (err) {
+      console.error('Error in loadAllTransactions:', err)
+      if (requestId === loadRequestId.current) {
+        setError('Failed to load transactions')
+      }
+    }
+  }
+
+  const loadAttachmentCounts = async (transactions: Transaction[]) => {
+    if (attachmentsTableMissing.current || transactions.length === 0) return
+
+    const CHUNK_SIZE = 50
+    const chunkIds = (ids: string[]) => {
+      const chunks: string[][] = []
+      for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
+        chunks.push(ids.slice(i, i + CHUNK_SIZE))
+      }
+      return chunks
+    }
+
+    const isMissingTableError = (error: { code?: string; message?: string } | null) =>
+      error?.code === "PGRST205" ||
+      error?.code === "42P01" ||
+      (error?.message?.includes("document_attachments") ?? false)
+
+    try {
+      const expenseIds = [...new Set(transactions.filter(t => t.isExpense).map(t => t.id))]
+      const paymentIds = [...new Set(transactions.filter(t => !t.isExpense).map(t => t.id))]
+      const counts: Record<string, number> = {}
+
+      for (const chunk of chunkIds(expenseIds)) {
+        const { data, error } = await supabase
+          .from("document_attachments")
+          .select("expense_id")
+          .in("expense_id", chunk)
+
+        if (error) {
+          if (isMissingTableError(error)) {
+            attachmentsTableMissing.current = true
+          }
+          return
+        }
+
+        data?.forEach(att => {
+          if (att.expense_id) {
+            counts[`expense_${att.expense_id}`] = (counts[`expense_${att.expense_id}`] || 0) + 1
+          }
+        })
+      }
+
+      for (const chunk of chunkIds(paymentIds)) {
+        const { data, error } = await supabase
+          .from("document_attachments")
+          .select("payment_id")
+          .in("payment_id", chunk)
+
+        if (error) {
+          if (isMissingTableError(error)) {
+            attachmentsTableMissing.current = true
+          }
+          return
+        }
+
+        data?.forEach(att => {
+          if (att.payment_id) {
+            counts[`payment_${att.payment_id}`] = (counts[`payment_${att.payment_id}`] || 0) + 1
+          }
+        })
+      }
+
+      setAttachmentCounts(prev => ({ ...prev, ...counts }))
+    } catch {
+      // Attachment counts are optional; fail silently
+    }
+  }
+
+  const loadElectricityBillMatches = async (transactions: Transaction[]) => {
+    const synergyExpenses = transactions.filter(
+      t => t.isExpense && parseSynergyAccount(t.description)
+    )
+    if (synergyExpenses.length === 0) return
+
+    const accountNumbers = [
+      ...new Set(
+        synergyExpenses
+          .map(t => parseSynergyAccount(t.description))
+          .filter((a): a is string => !!a)
+      ),
+    ]
+
+    const expenseAmountById: Record<string, number> = {}
+    rawExpenses.forEach(alloc => {
+      if (alloc.expenses?.id) {
+        expenseAmountById[alloc.expenses.id] = Number(alloc.expenses.amount)
+      }
+    })
+
+    try {
+      const { data, error } = await supabase
+        .from("electricity_bills")
+        .select(
+          "id, bill_date, bill_date_range_start, bill_date_range_end, total_units_consumed, units_per_day, is_estimated, account_number, bill_amount, meter_reading, pdf_file_path"
+        )
+        .in("account_number", accountNumbers)
+
+      if (error || !data) return
+
+      const matches: Record<string, ElectricityBillInfo> = {}
+
+      for (const expense of synergyExpenses) {
+        const account = parseSynergyAccount(expense.description)
+        if (!account) continue
+
+        const candidates = data.filter(b => b.account_number === account)
+        if (candidates.length === 0) continue
+
+        const fullAmount = expenseAmountById[expense.id]
+        const byDate = candidates.find(b => b.bill_date === expense.date)
+        const byAmount =
+          fullAmount != null
+            ? candidates.find(b => Math.abs(Number(b.bill_amount) - fullAmount) < 0.02)
+            : undefined
+
+        let byNearbyDate: ElectricityBillInfo | undefined
+        if (!byDate && !byAmount) {
+          const expenseTime = new Date(expense.date + "T00:00:00").getTime()
+          const nearby = candidates
+            .map(b => ({
+              bill: b as ElectricityBillInfo,
+              diff: Math.abs(new Date(b.bill_date + "T00:00:00").getTime() - expenseTime),
+            }))
+            .filter(x => x.diff <= 30 * 24 * 60 * 60 * 1000)
+            .sort((a, b) => a.diff - b.diff)
+          byNearbyDate = nearby[0]?.bill
+        }
+
+        const match = byDate || byAmount || byNearbyDate
+        if (match) {
+          matches[expense.id] = match as ElectricityBillInfo
+        }
+      }
+
+      setElectricityBillsByExpense(prev => ({ ...prev, ...matches }))
+    } catch {
+      // Electricity bill matching is optional; fail silently
+    }
+  }
+
+  const openDocumentModal = (transaction: Transaction) => {
+    if (transaction.isExpense) {
+      setModalExpenseId(transaction.id)
+      setModalPaymentId(undefined)
+      setModalElectricityBill(electricityBillsByExpense[transaction.id] || null)
+    } else {
+      setModalPaymentId(transaction.id)
+      setModalExpenseId(undefined)
+      setModalElectricityBill(null)
+    }
+    setModalDescription(transaction.description)
+    setModalOpen(true)
+  }
+
+  const getAttachmentCount = (transaction: Transaction): number => {
+    const key = transaction.isExpense 
+      ? `expense_${transaction.id}`
+      : `payment_${transaction.id}`
+    return attachmentCounts[key] || 0
+  }
+
+  const hasDocumentLink = (transaction: Transaction): boolean => {
+    if (getAttachmentCount(transaction) > 0) return true
+    if (transaction.isExpense && electricityBillsByExpense[transaction.id]) return true
+    return false
+  }
+
+  const getDocumentCount = (transaction: Transaction): number => {
+    const attachments = getAttachmentCount(transaction)
+    const hasBill = transaction.isExpense && electricityBillsByExpense[transaction.id] ? 1 : 0
+    return attachments + hasBill
   }
 
   const generatePDF = async () => {
@@ -330,41 +646,32 @@ function StatementsContent() {
 
   const generateCSV = () => {
     const party = parties.find(p => p.id === partyId)
-    let csvContent = "Date,Description,Type,Amount,Balance\n"
+    const headers = partyId 
+      ? "Date,Description,Type,Amount,Balance\n"
+      : "Date,Description,Type,Party,Amount\n"
+    let csvContent = headers
     
-    const transactions = [
-      ...rawExpenses
-        .filter(expense => 
-          expense.expenses &&
-          (!startDate || expense.expenses.expense_date >= startDate) &&
-          (!endDate || expense.expenses.expense_date <= endDate)
-        )
-        .map(expense => ({
-          date: expense.expenses.expense_date,
-          description: expense.expenses.description,
-          type: 'Expense',
-          amount: -expense.allocated_amount
-        })),
-      ...rawPayments
-        .filter(payment => 
-          (!startDate || payment.payment_date >= startDate) &&
-          (!endDate || payment.payment_date <= endDate)
-        )
-        .map(payment => ({
-          date: payment.payment_date,
-          description: payment.description || 'Payment',
-          type: 'Payment',
-          amount: payment.amount
-        }))
-    ]
-    .sort((a, b) => sortAscending ? a.date.localeCompare(b.date) : b.date.localeCompare(a.date))
+    const transactions = computedTransactions.map(item => ({
+      date: item.date,
+      description: item.description,
+      type: item.type,
+      party: item.party_name || '',
+      amount: item.amount
+    }))
     
-    // Calculate running balance
-    let runningBalance = 0
-    transactions.forEach(item => {
-      runningBalance += item.amount
-      csvContent += `${item.date},"${item.description}",${item.type},${item.amount.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' })},${runningBalance.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' })}\n`
-    })
+    if (partyId) {
+      // Calculate running balance for party view
+      let runningBalance = 0
+      transactions.forEach(item => {
+        runningBalance += item.amount
+        csvContent += `${item.date},"${item.description}",${item.type},${item.amount.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' })},${runningBalance.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' })}\n`
+      })
+    } else {
+      // No balance for all transactions view
+      transactions.forEach(item => {
+        csvContent += `${item.date},"${item.description}",${item.type},"${item.party}",${item.amount.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' })}\n`
+      })
+    }
     
     // Create and trigger download
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
@@ -372,7 +679,10 @@ function StatementsContent() {
     if (link.download !== undefined) {
       const url = URL.createObjectURL(blob)
       link.setAttribute("href", url)
-      link.setAttribute("download", `statement_${party?.name}_${new Date().toISOString().split('T')[0]}.csv`)
+      const filename = partyId 
+        ? `statement_${party?.name}_${new Date().toISOString().split('T')[0]}.csv`
+        : `all_transactions_${new Date().toISOString().split('T')[0]}.csv`
+      link.setAttribute("download", filename)
       link.style.visibility = 'hidden'
       document.body.appendChild(link)
       link.click()
@@ -380,10 +690,10 @@ function StatementsContent() {
     }
   }
 
-  // Calculate total balance
-  const totalPayments = rawPayments.reduce((sum, p) => sum + p.amount, 0)
-  const totalExpenses = rawExpenses.reduce((sum, e) => sum + e.allocated_amount, 0)
-  const balance = totalPayments - totalExpenses
+  // Calculate total balance (only when a party is selected)
+  const balance = partyId 
+    ? rawPayments.reduce((sum, p) => sum + p.amount, 0) - rawExpenses.reduce((sum, e) => sum + e.allocated_amount, 0)
+    : 0
 
   return (
     <div className="p-6 max-w-[1200px] mx-auto">
@@ -404,7 +714,7 @@ function StatementsContent() {
                 <label className="block text-sm font-medium text-gray-700 mb-2">Select Party</label>
                 <select 
                   value={partyId} 
-                  onChange={(e) => setPartyId(e.target.value)}
+                  onChange={(e) => handlePartyChange(e.target.value)}
                   className="w-full p-2 border rounded"
                 >
                   <option value="">Select a party...</option>
@@ -449,24 +759,28 @@ function StatementsContent() {
             </div>
           </div>
 
-          {partyId && (
+          {(partyId || computedTransactions.length > 0) && (
             <div className="space-y-4">
               <div className="flex justify-between items-center">
-                <h2 className="text-xl font-semibold">Statement Details</h2>
-                <div className="space-x-2">
-                  <button
-                    onClick={() => generatePDF()}
-                    className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
-                  >
-                    Export PDF
-                  </button>
-                  <button
-                    onClick={generateCSV}
-                    className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
-                  >
-                    Export CSV
-                  </button>
-                </div>
+                <h2 className="text-xl font-semibold">
+                  {partyId ? 'Statement Details' : 'All Transactions'}
+                </h2>
+                {partyId && (
+                  <div className="space-x-2">
+                    <button
+                      onClick={() => generatePDF()}
+                      className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+                    >
+                      Export PDF
+                    </button>
+                    <button
+                      onClick={generateCSV}
+                      className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
+                    >
+                      Export CSV
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div className="overflow-x-auto">
@@ -487,45 +801,99 @@ function StatementsContent() {
                       </th>
                       <th className="px-4 py-2 text-left">Description</th>
                       <th className="px-4 py-2 text-left">Type</th>
+                      {!partyId && <th className="px-4 py-2 text-left">Party</th>}
                       <th className="px-4 py-2 text-right">Amount</th>
-                      <th className="px-4 py-2 text-right">Balance</th>
+                      {partyId && <th className="px-4 py-2 text-right">Balance</th>}
+                      <th className="px-4 py-2 text-center">Documents</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {paginatedTransactions.map((item, idx) => (
-                      <tr key={`${item.type}-${idx}`} className="border-t">
-                        <td className="px-4 py-2">
-                          {isAdmin && item.id ? (
-                            <Link 
-                              href={`/edit-${item.isExpense ? 'expense' : 'payment'}/${item.id}`} 
-                              className="text-blue-600 hover:underline"
-                            >
-                              {item.date}
-                            </Link>
-                          ) : (
-                            item.date
-                          )}
+                    {paginatedTransactions.length === 0 ? (
+                      <tr>
+                        <td colSpan={partyId ? 6 : 6} className="px-4 py-8 text-center text-gray-500">
+                          {partyId ? 'No transactions found for this party' : 'No transactions found'}
                         </td>
-                        <td className="px-4 py-2">{item.description}</td>
-                        <td className="px-4 py-2">{item.type}</td>
+                      </tr>
+                    ) : (
+                      paginatedTransactions.map((item, idx) => (
+                        <tr key={`${item.type}-${item.id}-${idx}`} className="border-t">
+                          <td className="px-4 py-2">
+                            {isAdmin && item.id ? (
+                              <Link 
+                                href={`/edit-${item.isExpense ? 'expense' : 'payment'}/${item.id}`} 
+                                className="text-blue-600 hover:underline"
+                              >
+                                {item.date}
+                              </Link>
+                            ) : (
+                              item.date
+                            )}
+                          </td>
+                          <td className="px-4 py-2">
+                            {hasDocumentLink(item) ? (
+                              <button
+                                type="button"
+                                onClick={() => openDocumentModal(item)}
+                                className="text-blue-600 hover:underline text-left"
+                                title="View attached document(s)"
+                              >
+                                {item.description}
+                              </button>
+                            ) : (
+                              item.description
+                            )}
+                          </td>
+                          <td className="px-4 py-2">{item.type}</td>
+                        {!partyId && (
+                          <td className="px-4 py-2">
+                            {item.party_name ? (
+                              <Link 
+                                href={`/statements?party=${item.party_id}`}
+                                className="text-blue-600 hover:underline"
+                              >
+                                {item.party_name}
+                              </Link>
+                            ) : (
+                              'Unknown'
+                            )}
+                          </td>
+                        )}
                         <td className={`px-4 py-2 text-right ${item.amount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                           {item.amount.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' })}
                         </td>
-                        <td className={`px-4 py-2 text-right ${item.runningBalance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          {item.runningBalance.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' })}
+                        {partyId && (
+                          <td className={`px-4 py-2 text-right ${item.runningBalance! >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            {item.runningBalance!.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' })}
+                          </td>
+                        )}
+                        <td className="px-4 py-2 text-center">
+                          {getDocumentCount(item) > 0 && (
+                            <button
+                              onClick={() => openDocumentModal(item)}
+                              className="text-blue-600 hover:text-blue-800 hover:underline flex items-center justify-center gap-1"
+                              title={`${getDocumentCount(item)} document(s) attached`}
+                            >
+                              <Paperclip className="w-4 h-4" />
+                              <span className="text-xs">{getDocumentCount(item)}</span>
+                            </button>
+                          )}
                         </td>
-                      </tr>
-                    ))}
+                        </tr>
+                      ))
+                    )}
                   </tbody>
-                  <tfoot>
-                    <tr className="border-t font-bold">
-                      <td className="px-4 py-2" colSpan={3}>Final Balance</td>
-                      <td className={`px-4 py-2 text-right ${balance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {balance.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' })}
-                      </td>
-                      <td></td>
-                    </tr>
-                  </tfoot>
+                  {partyId && (
+                    <tfoot>
+                      <tr className="border-t font-bold">
+                        <td className="px-4 py-2" colSpan={3}>Final Balance</td>
+                        <td className={`px-4 py-2 text-right ${balance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          {balance.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' })}
+                        </td>
+                        <td></td>
+                        <td></td>
+                      </tr>
+                    </tfoot>
+                  )}
                 </table>
               </div>
 
@@ -572,6 +940,21 @@ function StatementsContent() {
           )}
         </div>
       )}
+
+      <DocumentModal
+        isOpen={modalOpen}
+        onClose={() => {
+          setModalOpen(false)
+          setModalExpenseId(undefined)
+          setModalPaymentId(undefined)
+          setModalDescription("")
+          setModalElectricityBill(null)
+        }}
+        expenseId={modalExpenseId}
+        paymentId={modalPaymentId}
+        transactionDescription={modalDescription}
+        electricityBill={modalElectricityBill}
+      />
     </div>
   )
 }

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import supabase from "@/lib/supabaseClient"
 import Header from "@/components/Header"
+import DocumentAttachments from "@/components/DocumentAttachments"
 
 export default function EditExpensePage({ params }) {
   const router = useRouter()
@@ -255,6 +256,15 @@ export default function EditExpensePage({ params }) {
           </button>
         </div>
       </form>
+
+      <div className="mt-8 border-t pt-6">
+        <DocumentAttachments 
+          expenseId={params.id}
+          onUpdate={() => {
+            // Optionally refresh expense data if needed
+          }}
+        />
+      </div>
     </div>
   )
 } 

@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '@/context/AuthContext'
 import Header from '@/components/Header'
-import DashboardShell from '@/components/DashboardShell'
 import { ElectricityBillData } from '@/lib/parseElectricityBill'
 
 interface ElectricityBill {
@@ -16,7 +15,9 @@ interface ElectricityBill {
   is_estimated: boolean
   account_number: string
   bill_amount: number
+  meter_reading?: number | null
   pdf_file_path?: string
+  expense_id?: string | null
   created_at: string
   updated_at: string
 }
@@ -32,6 +33,7 @@ export default function ElectricityBillsPage() {
   const [bills, setBills] = useState<ElectricityBill[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
   const [isAdmin, setIsAdmin] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [parsingResults, setParsingResults] = useState<Array<ElectricityBillData & {fileName: string, fileUrl: string}>>([])
@@ -157,6 +159,7 @@ export default function ElectricityBillsPage() {
 
     setUploading(true)
     setError('')
+    setNotice('')
     setParsingResults([])
     setFailedFiles([])
     setUploadProgress({ current: 0, total: files.length, currentFile: '' })
@@ -241,51 +244,60 @@ export default function ElectricityBillsPage() {
     try {
       setUploading(true)
       setError('')
+      setNotice('')
       setFailedImports(new Map()) // Reset failed imports
       
       // Only save selected bills
-      const billsToSave = parsingResults.filter((_, index) => selectedParsedBills.has(index))
+      const selectedIndices = parsingResults
+        .map((_, index) => index)
+        .filter((index) => selectedParsedBills.has(index))
       
-      if (billsToSave.length === 0) {
+      if (selectedIndices.length === 0) {
         setError('No bills selected for saving')
         return
       }
       
-      setSaveProgress({ current: 0, total: billsToSave.length, currentFile: '' })
+      setSaveProgress({ current: 0, total: selectedIndices.length, currentFile: '' })
       
       const failedImportsMap = new Map<number, string>()
       const successfulIndices: number[] = []
+      const outcomes = { created: 0, linked: 0, already_recorded: 0 }
       
-      for (let i = 0; i < parsingResults.length; i++) {
+      for (let step = 0; step < selectedIndices.length; step++) {
+        const i = selectedIndices[step]
         const billData = parsingResults[i]
-        setSaveProgress({ current: successfulIndices.length + 1, total: billsToSave.length, currentFile: billData.fileName })
+        setSaveProgress({ current: step + 1, total: selectedIndices.length, currentFile: billData.fileName })
         try {
           const response = await fetch('/api/electricity-bills', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
             },
-                      body: JSON.stringify({
-            billDate: billData.billDate,
-            billDateRangeStart: billData.billDateRangeStart,
-            billDateRangeEnd: billData.billDateRangeEnd,
-            totalUnitsConsumed: billData.totalUnitsConsumed,
-            unitsPerDay: billData.unitsPerDay,
-            isEstimated: billData.isEstimated,
-            accountNumber: billData.accountNumber,
-            billAmount: billData.billAmount,
-            meterReading: billData.meterReading,
-          }),
+            body: JSON.stringify({
+              billDate: billData.billDate,
+              billDateRangeStart: billData.billDateRangeStart,
+              billDateRangeEnd: billData.billDateRangeEnd,
+              totalUnitsConsumed: billData.totalUnitsConsumed,
+              unitsPerDay: billData.unitsPerDay,
+              isEstimated: billData.isEstimated,
+              accountNumber: billData.accountNumber,
+              billAmount: billData.billAmount,
+              meterReading: billData.meterReading,
+            }),
           })
 
+          const data = await response.json()
+
           if (!response.ok) {
-            const errorData = await response.json()
-            const errorMessage = errorData.error || 'Unknown error occurred'
+            const errorMessage = data.error || 'Unknown error occurred'
             failedImportsMap.set(i, errorMessage)
             console.error(`Failed to save bill ${i}:`, errorMessage)
           } else {
             successfulIndices.push(i)
-            console.log(`Successfully saved bill ${i}`)
+            if (data.expenseStatus === 'created' || data.expenseStatus === 'linked' || data.expenseStatus === 'already_recorded') {
+              outcomes[data.expenseStatus as keyof typeof outcomes] += 1
+            }
+            console.log(`Successfully saved bill ${i}:`, data.expenseStatus)
           }
         } catch (err) {
           const errorMessage = err instanceof Error ? err.message : 'Network or processing error'
@@ -334,11 +346,27 @@ export default function ElectricityBillsPage() {
       setSelectedParsedBills(remainingSelectedBills)
       setFailedImports(updatedFailedImports)
       
+      const outcomeParts = []
+      if (outcomes.created > 0) {
+        outcomeParts.push(`${outcomes.created} new expense${outcomes.created === 1 ? '' : 's'} recorded`)
+      }
+      if (outcomes.linked > 0) {
+        outcomeParts.push(`${outcomes.linked} linked to an existing expense`)
+      }
+      if (outcomes.already_recorded > 0) {
+        outcomeParts.push(`${outcomes.already_recorded} already in the cashbook`)
+      }
+      const savedSummary = successfulIndices.length > 0
+        ? `${successfulIndices.length} bill${successfulIndices.length === 1 ? '' : 's'} saved${outcomeParts.length ? `. ${outcomeParts.join(', ')}` : ''}.`
+        : ''
+
       // Check if any bills failed
       if (failedImportsMap.size > 0) {
-        const successCount = successfulIndices.length
-        if (successCount > 0) {
-          setError(`${successCount} bills saved successfully, ${failedImportsMap.size} bills failed to import. Check the highlighted bills below.`)
+        if (savedSummary) {
+          setNotice(savedSummary)
+        }
+        if (successfulIndices.length > 0) {
+          setError(`${failedImportsMap.size} bill${failedImportsMap.size === 1 ? '' : 's'} failed to import. Check the highlighted bills below.`)
         } else {
           setError(`All ${failedImportsMap.size} selected bills failed to import. Check the highlighted bills below.`)
         }
@@ -358,6 +386,7 @@ export default function ElectricityBillsPage() {
         setFailedFiles([])
         setShowUploadForm(false)
         setError('')
+        setNotice(savedSummary)
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save bills')
@@ -378,6 +407,7 @@ export default function ElectricityBillsPage() {
     setFailedFiles([])
     setShowUploadForm(false)
     setError('')
+    setNotice('')
     setUploadProgress(null)
     setSaveProgress(null)
   }
@@ -428,7 +458,7 @@ export default function ElectricityBillsPage() {
       return
     }
 
-    if (!confirm(`Are you sure you want to delete ${selectedBills.size} selected bill(s)? This action cannot be undone.`)) {
+    if (!confirm(`Delete ${selectedBills.size} selected bill(s)? The cashbook expense for each bill is kept.`)) {
       return
     }
 
@@ -488,11 +518,22 @@ export default function ElectricityBillsPage() {
   return (
     <div>
       <Header />
-      <DashboardShell>
-        <div style={{ padding: '2rem' }}>
+      <div style={{ padding: '2rem', maxWidth: '1200px', margin: '0 auto' }}>
           <h1 style={{ fontSize: '2rem', fontWeight: 'bold', marginBottom: '2rem' }}>
             Electricity Bills
           </h1>
+
+          {notice && (
+            <div style={{
+              padding: '1rem',
+              backgroundColor: '#dcfce7',
+              color: '#166534',
+              borderRadius: '0.5rem',
+              marginBottom: '1rem'
+            }}>
+              {notice}
+            </div>
+          )}
 
           {error && (
             <div style={{
@@ -523,7 +564,7 @@ export default function ElectricityBillsPage() {
                     style={{ marginBottom: '1rem' }}
                   />
                   <p style={{ fontSize: '0.875rem', color: '#6b7280' }}>
-                    Select one or more PDF electricity bills to upload and parse
+                    Select one or more PDF electricity bills. Saving a bill records it here and posts the expense, split across the parties for that account. Uploading a bill that is already paid links the existing expense instead of creating another one.
                   </p>
                   
                   {/* Progress Indicator */}
@@ -1014,6 +1055,9 @@ export default function ElectricityBillsPage() {
                       <th style={{ padding: '1rem', textAlign: 'right', borderBottom: '1px solid #e5e7eb' }}>
                         Amount
                       </th>
+                      <th style={{ padding: '1rem', textAlign: 'left', borderBottom: '1px solid #e5e7eb' }}>
+                        Expense
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1077,6 +1121,18 @@ export default function ElectricityBillsPage() {
                         </td>
                         <td style={{ padding: '1rem', textAlign: 'right', borderBottom: '1px solid #f3f4f6' }}>
                           {formatCurrency(bill.bill_amount)}
+                        </td>
+                        <td style={{ padding: '1rem', borderBottom: '1px solid #f3f4f6' }}>
+                          {bill.expense_id ? (
+                            <a
+                              href={`/edit-expense/${bill.expense_id}`}
+                              style={{ color: '#3b82f6', textDecoration: 'underline' }}
+                            >
+                              Recorded
+                            </a>
+                          ) : (
+                            '—'
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -1164,7 +1220,6 @@ export default function ElectricityBillsPage() {
             )}
           </div>
         </div>
-      </DashboardShell>
     </div>
   )
 }

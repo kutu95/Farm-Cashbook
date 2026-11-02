@@ -94,6 +94,9 @@ export default function DashboardPage() {
     }
   }
 
+  // Calculate total owed to farm (reversed signs)
+  const totalOwedToFarm = partyBalances.reduce((sum, party) => sum - party.balance, 0)
+
   // Combine admin check and balance loading into a single effect
   useEffect(() => {
     const initializeDashboard = async () => {
@@ -143,6 +146,14 @@ export default function DashboardPage() {
             </tr>
           ))}
         </tbody>
+        <tfoot>
+          <tr className="border-t-2 font-bold bg-gray-50">
+            <td className="border px-2 py-2 text-left">Total Owed to Farm</td>
+            <td className={`border px-2 py-2 text-right ${totalOwedToFarm >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              {totalOwedToFarm.toLocaleString("en-AU", { style: "currency", currency: "AUD" })}
+            </td>
+          </tr>
+        </tfoot>
       </table>
 
       <div className="flex flex-wrap gap-4">

@@ -4,6 +4,7 @@ import { useEffect, useState, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import supabase from "@/lib/supabaseClient"
 import Header from "@/components/Header"
+import DocumentAttachments from "@/components/DocumentAttachments"
 
 function EditExpenseContent() {
   const router = useRouter()
@@ -154,6 +155,18 @@ function EditExpenseContent() {
 
         <button className="bg-blue-600 text-white px-4 py-2 rounded">Save Changes</button>
       </form>
+
+      {expenseId && (
+        <div className="mt-8 border-t pt-6">
+          <DocumentAttachments 
+            expenseId={expenseId}
+            onUpdate={() => {
+              // Optionally refresh expense data if needed
+              loadExpense()
+            }}
+          />
+        </div>
+      )}
     </div>
   )
 }
