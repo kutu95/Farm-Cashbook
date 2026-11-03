@@ -1,17 +1,24 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import Link from "next/link"
 import supabase from "@/lib/supabaseClient"
-import Header from "@/components/Header"
+import AppShell from "@/components/AppShell"
+import PageFrame from "@/components/PageFrame"
+import Alert from "@/components/Alert"
+import { AllocationFields, fieldControlClass, FormField } from "@/components/FormField"
+import { Button } from "@/components/ui/button"
+import { todayISO } from "@/lib/format"
 
 export default function AddExpensePage() {
   const [description, setDescription] = useState("")
   const [amount, setAmount] = useState("")
-  const [expenseDate, setExpenseDate] = useState("")
+  const [expenseDate, setExpenseDate] = useState(todayISO())
   const [allocationType, setAllocationType] = useState<"fixed" | "percentage">("fixed")
   const [allocations, setAllocations] = useState<any[]>([])
   const [parties, setParties] = useState<any[]>([])
   const [error, setError] = useState("")
+  const [notice, setNotice] = useState("")
 
   useEffect(() => {
     loadParties()
@@ -77,74 +84,71 @@ export default function AddExpensePage() {
       return
     }
 
-    window.location.href = "/dashboard"
+    setNotice("Expense saved.")
+    setDescription("")
+    setAmount("")
+    setExpenseDate(todayISO())
+    setAllocations(parties.map((party: any) => ({ party_id: party.id, amount: "" })))
   }
 
+  const target = allocationType === "percentage" ? 100 : Number.parseFloat(amount || "0") || 0
+  const allocated = allocations.reduce((sum, alloc) => sum + (Number.parseFloat(alloc.amount || "0") || 0), 0)
+  const splitMatches = target > 0 && Math.abs(target - allocated) < 0.001
+
   return (
-    <div className="p-6 max-w-3xl mx-auto">
-      <Header />
-      <h1 className="text-xl font-bold mb-4">Add Expense</h1>
-      <p className="mb-4 text-sm text-gray-600">
-        Synergy electricity bills are uploaded on{' '}
-        <a href="/electricity-bills" className="text-blue-600 underline">Electricity Bills</a>
-        , which also records the expense.
-      </p>
-
-      {error && <p className="text-red-600 mb-4">{error}</p>}
+    <AppShell>
+      <PageFrame
+        title="Add expense"
+        width="3xl"
+        description="Synergy electricity bills are uploaded on Electricity bills, which also records the expense."
+      >
+      {notice ? <Alert tone="success">{notice}</Alert> : null}
+      {error ? <Alert tone="error">{error}</Alert> : null}
       
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label>Description:</label>
-          <input className="border p-2 w-full" value={description} onChange={(e) => setDescription(e.target.value)} required />
-        </div>
+      <form onSubmit={handleSubmit} className="space-y-4 rounded-lg border border-gray-200 bg-white p-6">
+        <FormField id="description" label="Description">
+          <input id="description" className={fieldControlClass} value={description} onChange={(e) => setDescription(e.target.value)} required />
+        </FormField>
 
-        <div>
-          <label>Amount:</label>
-          <input className="border p-2 w-full" type="number" value={amount} onChange={(e) => setAmount(e.target.value)} required />
-        </div>
+        <FormField id="amount" label="Amount">
+          <input id="amount" className={fieldControlClass} type="number" min="0" step="0.01" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} required />
+        </FormField>
 
-        <div>
-          <label>Date:</label>
-          <input className="border p-2 w-full" type="date" value={expenseDate} onChange={(e) => setExpenseDate(e.target.value)} required />
-        </div>
+        <FormField id="expense-date" label="Date">
+          <input id="expense-date" className={fieldControlClass} type="date" value={expenseDate} onChange={(e) => setExpenseDate(e.target.value)} required />
+        </FormField>
 
-        <div>
-          <label>Allocation Type:</label>
-          <select className="border p-2 w-full" value={allocationType} onChange={(e) => setAllocationType(e.target.value as any)}>
-            <option value="fixed">Fixed Amount</option>
+        <FormField id="allocation-type" label="Allocation type">
+          <select id="allocation-type" className={fieldControlClass} value={allocationType} onChange={(e) => setAllocationType(e.target.value as "fixed" | "percentage")}>
+            <option value="fixed">Fixed amount</option>
             <option value="percentage">Percentage</option>
           </select>
-        </div>
+        </FormField>
 
-        <div>
-          <h2 className="font-semibold mb-2">Allocations:</h2>
-          {allocations.map((alloc, idx) => (
-            <div key={idx} className="flex items-center mb-2">
-              <span className="w-1/3">{parties.find(p => p.id === alloc.party_id)?.name}:</span>
-              <input
-                type="number"
-                className="border p-2 w-1/2"
-                value={alloc.amount}
-                onChange={(e) => handleAllocationChange(alloc.party_id, e.target.value)}
-              />
-              <span className="ml-2">{allocationType === "percentage" ? "%" : "AUD"}</span>
-            </div>
-          ))}
-        </div>
+        <AllocationFields
+          mode={allocationType}
+          target={target}
+          rows={allocations.map((alloc) => ({
+            partyId: alloc.party_id,
+            name: parties.find((party) => party.id === alloc.party_id)?.name || "Party",
+            value: alloc.amount,
+          }))}
+          onChange={handleAllocationChange}
+        />
 
-        <div className="flex gap-4">
-          <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
-            Save Expense
-          </button>
-          <button
-            type="button"
-            onClick={() => window.history.back()}
-            className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600"
-          >
-            Cancel
-          </button>
+        <div className="flex flex-wrap gap-2">
+          <Button type="submit" disabled={!splitMatches}>
+            Save expense
+          </Button>
+          <Button type="button" variant="outline" asChild>
+            <Link href="/dashboard">Cancel</Link>
+          </Button>
+          <Link href="/electricity-bills" className="inline-flex h-10 items-center px-2 text-sm text-green-800 underline-offset-2 hover:underline">
+            Upload a bill instead
+          </Link>
         </div>
       </form>
-    </div>
+      </PageFrame>
+    </AppShell>
   )
 }

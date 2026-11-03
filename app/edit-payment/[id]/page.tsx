@@ -1,9 +1,15 @@
 "use client"
 
 import { useEffect, useState, Suspense } from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import supabase from "@/lib/supabaseClient"
-import Header from "@/components/Header"
+import AppShell from "@/components/AppShell"
+import PageFrame from "@/components/PageFrame"
+import EmptyState from "@/components/EmptyState"
+import Alert from "@/components/Alert"
+import { fieldControlClass, FormField } from "@/components/FormField"
+import { Button } from "@/components/ui/button"
 import DocumentAttachments from "@/components/DocumentAttachments"
 
 function EditPaymentContent({ params }) {
@@ -17,6 +23,7 @@ function EditPaymentContent({ params }) {
   const [sourceType, setSourceType] = useState("Bank deposit")
   const [parties, setParties] = useState<any[]>([])
   const [error, setError] = useState("")
+  const [notice, setNotice] = useState("")
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -61,7 +68,7 @@ function EditPaymentContent({ params }) {
     if (updateError) {
       setError(updateError.message)
     } else {
-      router.push("/dashboard")
+      setNotice("Changes saved.")
     }
   }
 
@@ -84,72 +91,51 @@ function EditPaymentContent({ params }) {
 
   if (loading) {
     return (
-      <div className="p-6">
-        <Header />
-        <div>Loading...</div>
-      </div>
+      <AppShell>
+        <EmptyState title="Loading payment" />
+      </AppShell>
     )
   }
 
   return (
-    <div className="p-6 max-w-3xl mx-auto">
-      <Header />
-      <div className="flex justify-between items-center mb-4">
-        <h1 className="text-xl font-bold">Edit Payment</h1>
-        <button 
-          onClick={handleDelete}
-          className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700"
-        >
-          Delete Payment
-        </button>
-      </div>
-      {error && <p className="text-red-600 mb-4">{error}</p>}
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label>Party:</label>
-          <select className="border p-2 w-full" value={partyId} onChange={(e) => setPartyId(e.target.value)}>
+    <AppShell>
+      <PageFrame
+        title="Edit payment"
+        width="3xl"
+        actions={<Button type="button" variant="destructive" onClick={handleDelete}>Delete payment</Button>}
+      >
+      {notice ? <Alert tone="success">{notice}</Alert> : null}
+      {error ? <Alert tone="error">{error}</Alert> : null}
+      <form onSubmit={handleSubmit} className="space-y-4 rounded-lg border border-gray-200 bg-white p-6">
+        <FormField id="party" label="Party">
+          <select id="party" className={fieldControlClass} value={partyId} onChange={(e) => setPartyId(e.target.value)}>
             {parties.map((party: any) => (
               <option key={party.id} value={party.id}>{party.name}</option>
             ))}
           </select>
-        </div>
-
-        <div>
-          <label>Amount:</label>
-          <input className="border p-2 w-full" type="number" value={amount} onChange={(e) => setAmount(e.target.value)} required />
-        </div>
-
-        <div>
-          <label>Payment Date:</label>
-          <input className="border p-2 w-full" type="date" value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} required />
-        </div>
-
-        <div>
-          <label>Description:</label>
-          <input className="border p-2 w-full" value={description} onChange={(e) => setDescription(e.target.value)} />
-        </div>
-
-        <div>
-          <label>Source Type:</label>
-          <select className="border p-2 w-full" value={sourceType} onChange={(e) => setSourceType(e.target.value)}>
+        </FormField>
+        <FormField id="amount" label="Amount">
+          <input id="amount" className={fieldControlClass} type="number" min="0" step="0.01" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} required />
+        </FormField>
+        <FormField id="payment-date" label="Payment date">
+          <input id="payment-date" className={fieldControlClass} type="date" value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} required />
+        </FormField>
+        <FormField id="description" label="Description">
+          <input id="description" className={fieldControlClass} value={description} onChange={(e) => setDescription(e.target.value)} />
+        </FormField>
+        <FormField id="source-type" label="Source type">
+          <select id="source-type" className={fieldControlClass} value={sourceType} onChange={(e) => setSourceType(e.target.value)}>
             <option value="Bank deposit">Bank deposit</option>
             <option value="Payment to customer">Payment to customer</option>
             <option value="Credit transfer">Credit transfer</option>
             <option value="Credit">Credit</option>
           </select>
-        </div>
-
-        <div className="flex gap-4">
-          <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
-            Save Changes
-          </button>
-          <button 
-            type="button" 
-            onClick={() => router.back()} 
-            className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600"
-          >
-            Cancel
-          </button>
+        </FormField>
+        <div className="flex flex-wrap gap-2">
+          <Button type="submit">Save changes</Button>
+          <Button type="button" variant="outline" asChild>
+            <Link href="/statements">Cancel</Link>
+          </Button>
         </div>
       </form>
 
@@ -162,13 +148,14 @@ function EditPaymentContent({ params }) {
           }}
         />
       </div>
-    </div>
+      </PageFrame>
+    </AppShell>
   )
 }
 
 export default function EditPaymentPage({ params }) {
   return (
-    <Suspense fallback={<div className="p-6"><Header /><div>Loading...</div></div>}>
+    <Suspense fallback={<AppShell><EmptyState title="Loading payment" /></AppShell>}>
       <EditPaymentContent params={params} />
     </Suspense>
   )

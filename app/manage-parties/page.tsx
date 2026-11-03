@@ -1,9 +1,13 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
+import Link from "next/link"
 import supabase from "@/lib/supabaseClient"
-import Header from "@/components/Header"
+import AppShell from "@/components/AppShell"
+import PageFrame from "@/components/PageFrame"
+import Alert from "@/components/Alert"
+import { fieldControlClass, FormField } from "@/components/FormField"
+import { Button } from "@/components/ui/button"
 
 interface Party {
   id: string
@@ -12,7 +16,6 @@ interface Party {
 }
 
 export default function ManagePartiesPage() {
-  const router = useRouter()
   const [parties, setParties] = useState<Party[]>([])
   const [name, setName] = useState("")
   const [accountNumber, setAccountNumber] = useState("")
@@ -104,62 +107,38 @@ export default function ManagePartiesPage() {
     }
   }
 
-  const handleCancel = () => {
-    router.back()
-  }
-
   return (
-    <div className="p-6 max-w-md mx-auto">
-      <Header />
-      <div className="flex justify-between items-center mb-4">
-        <h1 className="text-xl font-bold">Manage Parties</h1>
-        <button
-          onClick={handleCancel}
-          className="bg-gray-500 text-white px-4 py-2 rounded-md hover:bg-gray-600 transition-colors"
-        >
-          Cancel
-        </button>
-      </div>
-
-      <div className="space-y-4 mb-6">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Party Name
-          </label>
+    <AppShell>
+      <PageFrame
+        title="Parties"
+        description="People and businesses the cashbook splits expenses across."
+        actions={<Button variant="outline" asChild><Link href="/dashboard">Back</Link></Button>}
+      >
+      <div className="mb-6 space-y-4 rounded-lg border border-gray-200 bg-white p-6">
+        <FormField id="party-name" label="Party name">
           <input
+            id="party-name"
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Enter party name"
-            className="border p-2 w-full rounded-md"
+            className={fieldControlClass}
           />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Electricity Account Number (Optional)
-          </label>
+        </FormField>
+        <FormField id="account-number" label="Electricity account number" hint="Optional. 9–12 letters or numbers.">
           <input
+            id="account-number"
             type="text"
             value={accountNumber}
             onChange={(e) => setAccountNumber(e.target.value.toUpperCase())}
             placeholder="e.g. ABC123456789"
-            className="border p-2 w-full rounded-md"
+            className={fieldControlClass}
           />
-          <p className="text-sm text-gray-500 mt-1">
-            Must be 9-12 alphanumeric characters
-          </p>
-        </div>
-
-        <button 
-          onClick={handleAdd} 
-          className="bg-blue-600 text-white px-4 py-2 w-full rounded-md hover:bg-blue-700 transition-colors"
-        >
-          Add Party
-        </button>
+        </FormField>
+        <Button type="button" onClick={handleAdd}>Add party</Button>
       </div>
 
-      {error && <p className="text-red-600 mb-4">{error}</p>}
+      {error ? <Alert tone="error">{error}</Alert> : null}
 
       <h2 className="font-bold mb-2">Existing Parties:</h2>
       <ul className="space-y-4">
@@ -194,12 +173,8 @@ export default function ManagePartiesPage() {
                   </p>
                 </div>
                 <div className="flex gap-2">
-                  <button onClick={saveEdit} className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 transition-colors">
-                    Save
-                  </button>
-                  <button onClick={cancelEdit} className="bg-gray-400 text-white px-4 py-2 rounded-md hover:bg-gray-500 transition-colors">
-                    Cancel
-                  </button>
+                  <Button type="button" onClick={saveEdit}>Save</Button>
+                  <Button type="button" variant="outline" onClick={cancelEdit}>Cancel</Button>
                 </div>
               </div>
             ) : (
@@ -215,7 +190,7 @@ export default function ManagePartiesPage() {
                   </div>
                   <button 
                     onClick={() => startEdit(p)} 
-                    className="text-blue-600 hover:text-blue-800 underline"
+                    className="text-green-800 underline-offset-2 hover:underline"
                   >
                     Edit
                   </button>
@@ -225,6 +200,7 @@ export default function ManagePartiesPage() {
           </li>
         ))}
       </ul>
-    </div>
+      </PageFrame>
+    </AppShell>
   )
 }

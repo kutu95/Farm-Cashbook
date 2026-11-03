@@ -2,7 +2,12 @@
 
 import { useEffect, useState, Suspense, useMemo, useRef } from "react"
 import { useSearchParams, useRouter, usePathname } from "next/navigation"
-import Header from "@/components/Header"
+import AppShell from "@/components/AppShell"
+import PageFrame from "@/components/PageFrame"
+import EmptyState from "@/components/EmptyState"
+import Alert from "@/components/Alert"
+import { Button } from "@/components/ui/button"
+import { formatDisplayDate, formatMoney } from "@/lib/format"
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
 import { useAuth } from "@/context/AuthContext"
@@ -696,18 +701,17 @@ function StatementsContent() {
     : 0
 
   return (
-    <div className="p-6 max-w-[1200px] mx-auto">
-      <Header />
-      <h1 className="text-2xl font-bold mb-6">Statements</h1>
-
-      {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">{error}</div>}
+    <AppShell>
+      <PageFrame
+        title="Statements"
+        description="Payments increase a balance. Expenses reduce it. Export is available once a party is selected."
+      >
+      {error && <Alert tone="error">{error}</Alert>}
 
       {authLoading ? (
-        <div className="flex justify-center items-center p-8">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
-        </div>
+        <EmptyState title="Loading statements" />
       ) : (
-        <div className="bg-white shadow rounded-lg p-6">
+        <div className="rounded-lg border border-gray-200 bg-white p-6">
           <div className="grid grid-cols-1 gap-4 mb-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
@@ -715,7 +719,7 @@ function StatementsContent() {
                 <select 
                   value={partyId} 
                   onChange={(e) => handlePartyChange(e.target.value)}
-                  className="w-full p-2 border rounded"
+                  className="h-10 w-full rounded-md border border-input bg-white px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <option value="">Select a party...</option>
                   {parties.map(party => (
@@ -731,7 +735,7 @@ function StatementsContent() {
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   placeholder="Search descriptions..."
-                  className="w-full p-2 border rounded"
+                  className="h-10 w-full rounded-md border border-input bg-white px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 />
               </div>
             </div>
@@ -743,7 +747,7 @@ function StatementsContent() {
                   type="date"
                   value={startDate}
                   onChange={(e) => setStartDate(e.target.value)}
-                  className="w-full p-2 border rounded"
+                  className="h-10 w-full rounded-md border border-input bg-white px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 />
               </div>
 
@@ -753,7 +757,7 @@ function StatementsContent() {
                   type="date"
                   value={endDate}
                   onChange={(e) => setEndDate(e.target.value)}
-                  className="w-full p-2 border rounded"
+                  className="h-10 w-full rounded-md border border-input bg-white px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 />
               </div>
             </div>
@@ -761,41 +765,46 @@ function StatementsContent() {
 
           {(partyId || computedTransactions.length > 0) && (
             <div className="space-y-4">
-              <div className="flex justify-between items-center">
+              <div className="flex flex-wrap items-center justify-between gap-3">
                 <h2 className="text-xl font-semibold">
                   {partyId ? 'Statement Details' : 'All Transactions'}
                 </h2>
-                {partyId && (
-                  <div className="space-x-2">
-                    <button
-                      onClick={() => generatePDF()}
-                      className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
-                    >
-                      Export PDF
-                    </button>
-                    <button
-                      onClick={generateCSV}
-                      className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
-                    >
-                      Export CSV
-                    </button>
-                  </div>
-                )}
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    onClick={() => generatePDF()}
+                    disabled={!partyId}
+                    title={partyId ? "Download a PDF statement" : "Select a party to export"}
+                  >
+                    Export PDF
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={generateCSV}
+                    disabled={!partyId}
+                    title={partyId ? "Download a CSV statement" : "Select a party to export"}
+                  >
+                    Export CSV
+                  </Button>
+                  {!partyId ? <span className="text-sm text-gray-500">Select a party to export.</span> : null}
+                </div>
               </div>
 
-              <div className="overflow-x-auto">
-                <table className="min-w-full">
-                  <thead>
+              <div className="max-h-[70vh] overflow-auto">
+                <table className="min-w-full text-sm">
+                  <thead className="sticky top-0 z-10 bg-white">
                     <tr>
-                      <th className="px-4 py-2 text-left">
+                      <th className="sticky left-0 z-20 bg-white px-4 py-2 text-left">
                         <div className="flex items-center gap-2">
                           Date
                           <button
+                            type="button"
                             onClick={() => setSortAscending(!sortAscending)}
-                            className="text-gray-500 hover:text-gray-700"
-                            title={sortAscending ? "Sort Descending" : "Sort Ascending"}
+                            className="rounded px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            aria-label={sortAscending ? "Showing oldest first. Show newest first." : "Showing newest first. Show oldest first."}
                           >
-                            {sortAscending ? "↓" : "↑"}
+                            {sortAscending ? "Oldest first" : "Newest first"}
                           </button>
                         </div>
                       </th>
@@ -816,17 +825,17 @@ function StatementsContent() {
                       </tr>
                     ) : (
                       paginatedTransactions.map((item, idx) => (
-                        <tr key={`${item.type}-${item.id}-${idx}`} className="border-t">
-                          <td className="px-4 py-2">
+                        <tr key={`${item.type}-${item.id}-${idx}`} className="border-t hover:bg-gray-50">
+                          <td className="sticky left-0 bg-white px-4 py-2">
                             {isAdmin && item.id ? (
                               <Link 
                                 href={`/edit-${item.isExpense ? 'expense' : 'payment'}/${item.id}`} 
-                                className="text-blue-600 hover:underline"
+                                className="text-green-800 underline-offset-2 hover:underline"
                               >
-                                {item.date}
+                                {formatDisplayDate(item.date)}
                               </Link>
                             ) : (
-                              item.date
+                              formatDisplayDate(item.date)
                             )}
                           </td>
                           <td className="px-4 py-2">
@@ -834,7 +843,7 @@ function StatementsContent() {
                               <button
                                 type="button"
                                 onClick={() => openDocumentModal(item)}
-                                className="text-blue-600 hover:underline text-left"
+                                className="text-left text-green-800 underline-offset-2 hover:underline"
                                 title="View attached document(s)"
                               >
                                 {item.description}
@@ -843,13 +852,17 @@ function StatementsContent() {
                               item.description
                             )}
                           </td>
-                          <td className="px-4 py-2">{item.type}</td>
+                          <td className="px-4 py-2">
+                            <span className={`inline-flex rounded px-2 py-0.5 text-xs font-medium ${item.isExpense ? "bg-gray-100 text-gray-700" : "bg-green-50 text-green-800"}`}>
+                              {item.type}
+                            </span>
+                          </td>
                         {!partyId && (
                           <td className="px-4 py-2">
                             {item.party_name ? (
                               <Link 
                                 href={`/statements?party=${item.party_id}`}
-                                className="text-blue-600 hover:underline"
+                                className="text-green-800 underline-offset-2 hover:underline"
                               >
                                 {item.party_name}
                               </Link>
@@ -858,12 +871,12 @@ function StatementsContent() {
                             )}
                           </td>
                         )}
-                        <td className={`px-4 py-2 text-right ${item.amount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          {item.amount.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' })}
+                        <td className="px-4 py-2 text-right tabular-nums">
+                          {formatMoney(item.amount)}
                         </td>
                         {partyId && (
-                          <td className={`px-4 py-2 text-right ${item.runningBalance! >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                            {item.runningBalance!.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' })}
+                          <td className="px-4 py-2 text-right tabular-nums">
+                            {formatMoney(item.runningBalance!)}
                           </td>
                         )}
                         <td className="px-4 py-2 text-center">
@@ -886,8 +899,8 @@ function StatementsContent() {
                     <tfoot>
                       <tr className="border-t font-bold">
                         <td className="px-4 py-2" colSpan={3}>Final Balance</td>
-                        <td className={`px-4 py-2 text-right ${balance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          {balance.toLocaleString('en-AU', { style: 'currency', currency: 'AUD' })}
+                        <td className="px-4 py-2 text-right tabular-nums">
+                          {formatMoney(balance)}
                         </td>
                         <td></td>
                         <td></td>
@@ -955,13 +968,14 @@ function StatementsContent() {
         transactionDescription={modalDescription}
         electricityBill={modalElectricityBill}
       />
-    </div>
+      </PageFrame>
+    </AppShell>
   )
 }
 
 export default function StatementsPage() {
   return (
-    <Suspense fallback={<div className="p-6"><Header /><div>Loading...</div></div>}>
+    <Suspense fallback={<AppShell><EmptyState title="Loading statements" /></AppShell>}>
       <StatementsContent />
     </Suspense>
   )

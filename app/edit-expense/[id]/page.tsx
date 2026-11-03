@@ -1,9 +1,15 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import supabase from "@/lib/supabaseClient"
-import Header from "@/components/Header"
+import AppShell from "@/components/AppShell"
+import PageFrame from "@/components/PageFrame"
+import EmptyState from "@/components/EmptyState"
+import Alert from "@/components/Alert"
+import { AllocationFields, fieldControlClass, FormField } from "@/components/FormField"
+import { Button } from "@/components/ui/button"
 import DocumentAttachments from "@/components/DocumentAttachments"
 
 export default function EditExpensePage({ params }) {
@@ -15,6 +21,7 @@ export default function EditExpensePage({ params }) {
   const [allocations, setAllocations] = useState<any[]>([])
   const [parties, setParties] = useState<any[]>([])
   const [error, setError] = useState("")
+  const [notice, setNotice] = useState("")
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -92,14 +99,24 @@ export default function EditExpensePage({ params }) {
 
       if (deleteError) throw deleteError
 
-      // Insert new allocations
-      const newAllocations = allocations
-        .filter(alloc => parseFloat(alloc.amount || "0") > 0)
-        .map(alloc => ({
-          expense_id: params.id,
-          party_id: alloc.party_id,
-          allocated_amount: parseFloat(alloc.amount)
-        }))
+      const filtered = allocations.filter(alloc => parseFloat(alloc.amount || "0") > 0)
+      const total = filtered.reduce((sum, alloc) => sum + parseFloat(alloc.amount || "0"), 0)
+      if (allocationType === "percentage" && Math.abs(total - 100) > 0.001) {
+        setError("Percentages must total 100%.")
+        return
+      }
+      if (allocationType === "fixed" && Math.abs(total - parseFloat(amount)) > 0.001) {
+        setError("Fixed amounts must total the expense amount.")
+        return
+      }
+
+      const newAllocations = filtered.map(alloc => ({
+        expense_id: params.id,
+        party_id: alloc.party_id,
+        allocated_amount: allocationType === "fixed"
+          ? parseFloat(alloc.amount)
+          : (parseFloat(amount) * parseFloat(alloc.amount) / 100)
+      }))
 
       if (newAllocations.length > 0) {
         const { error: insertError } = await supabase
@@ -109,7 +126,7 @@ export default function EditExpensePage({ params }) {
         if (insertError) throw insertError
       }
 
-      router.push("/dashboard")
+      setNotice("Changes saved.")
     } catch (error: any) {
       setError(error.message)
     }
@@ -145,126 +162,68 @@ export default function EditExpensePage({ params }) {
     router.push("/dashboard")
   }
 
+  const target = allocationType === "percentage" ? 100 : Number.parseFloat(amount || "0") || 0
+  const allocated = allocations.reduce((sum, alloc) => sum + (Number.parseFloat(alloc.amount || "0") || 0), 0)
+  const splitMatches = target > 0 && Math.abs(target - allocated) < 0.001
+
   if (loading) {
     return (
-      <div className="p-6">
-        <Header />
-        <div>Loading...</div>
-      </div>
+      <AppShell>
+        <EmptyState title="Loading expense" />
+      </AppShell>
     )
   }
 
   return (
-    <div className="p-6 max-w-3xl mx-auto">
-      <Header />
-      <div className="flex justify-between items-center mb-4">
-        <h1 className="text-xl font-bold">Edit Expense</h1>
-        <button 
-          onClick={handleDelete}
-          className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700"
-        >
-          Delete Expense
-        </button>
-      </div>
+    <AppShell>
+      <PageFrame
+        title="Edit expense"
+        width="3xl"
+        actions={<Button type="button" variant="destructive" onClick={handleDelete}>Delete expense</Button>}
+      >
+      {notice ? <Alert tone="success">{notice}</Alert> : null}
+      {error ? <Alert tone="error">{error}</Alert> : null}
 
-      {error && <p className="text-red-600 mb-4">{error}</p>}
-
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Description</label>
-          <input
-            type="text"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
-            required
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Amount</label>
-          <input
-            type="number"
-            step="0.01"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
-            required
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Date</label>
-          <input
-            type="date"
-            value={expenseDate}
-            onChange={(e) => setExpenseDate(e.target.value)}
-            className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
-            required
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Allocation Type</label>
-          <select
-            value={allocationType}
-            onChange={(e) => setAllocationType(e.target.value as "fixed" | "percentage")}
-            className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
-          >
-            <option value="fixed">Fixed Amount</option>
+      <form onSubmit={handleSubmit} className="space-y-4 rounded-lg border border-gray-200 bg-white p-6">
+        <FormField id="description" label="Description">
+          <input id="description" className={fieldControlClass} value={description} onChange={(e) => setDescription(e.target.value)} required />
+        </FormField>
+        <FormField id="amount" label="Amount">
+          <input id="amount" className={fieldControlClass} type="number" min="0" step="0.01" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} required />
+        </FormField>
+        <FormField id="expense-date" label="Date">
+          <input id="expense-date" className={fieldControlClass} type="date" value={expenseDate} onChange={(e) => setExpenseDate(e.target.value)} required />
+        </FormField>
+        <FormField id="allocation-type" label="Allocation type">
+          <select id="allocation-type" className={fieldControlClass} value={allocationType} onChange={(e) => setAllocationType(e.target.value as "fixed" | "percentage")}>
+            <option value="fixed">Fixed amount</option>
             <option value="percentage">Percentage</option>
           </select>
-        </div>
-
-        <div className="space-y-2">
-          <h3 className="font-medium">Party Allocations</h3>
-          {parties.map((party, index) => (
-            <div key={party.id} className="flex items-center gap-2">
-              <label className="w-1/3">{party.name}</label>
-              <input
-                type="number"
-                step="0.01"
-                value={allocations[index]?.amount || ""}
-                onChange={(e) => {
-                  const newAllocations = [...allocations]
-                  newAllocations[index] = {
-                    ...newAllocations[index],
-                    amount: e.target.value
-                  }
-                  setAllocations(newAllocations)
-                }}
-                placeholder={allocationType === "fixed" ? "Amount" : "Percentage"}
-                className="w-2/3 border border-gray-300 rounded-md shadow-sm p-2"
-              />
-            </div>
-          ))}
-        </div>
-
-        <div className="flex gap-4">
-          <button
-            type="submit"
-            className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700"
-          >
-            Update Expense
-          </button>
-          <button
-            type="button"
-            onClick={() => router.back()}
-            className="flex-1 bg-gray-500 text-white py-2 px-4 rounded-md hover:bg-gray-600"
-          >
-            Cancel
-          </button>
+        </FormField>
+        <AllocationFields
+          mode={allocationType}
+          target={target}
+          rows={allocations.map((alloc) => ({
+            partyId: alloc.party_id,
+            name: parties.find((party) => party.id === alloc.party_id)?.name || "Party",
+            value: alloc.amount || "",
+          }))}
+          onChange={(partyId, value) => {
+            setAllocations((current) => current.map((alloc) => alloc.party_id === partyId ? { ...alloc, amount: value } : alloc))
+          }}
+        />
+        <div className="flex flex-wrap gap-2">
+          <Button type="submit" disabled={!splitMatches}>Save changes</Button>
+          <Button type="button" variant="outline" asChild>
+            <Link href="/statements">Cancel</Link>
+          </Button>
         </div>
       </form>
 
       <div className="mt-8 border-t pt-6">
-        <DocumentAttachments 
-          expenseId={params.id}
-          onUpdate={() => {
-            // Optionally refresh expense data if needed
-          }}
-        />
+        <DocumentAttachments expenseId={params.id} onUpdate={() => {}} />
       </div>
-    </div>
+      </PageFrame>
+    </AppShell>
   )
 } 

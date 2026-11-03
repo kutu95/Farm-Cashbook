@@ -2,9 +2,11 @@
 
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/context/AuthContext'
-import { useRouter } from 'next/navigation'
-import DashboardShell from '@/components/DashboardShell'
-import Header from '@/components/Header'
+import Link from 'next/link'
+import AppShell from '@/components/AppShell'
+import PageFrame from '@/components/PageFrame'
+import EmptyState from '@/components/EmptyState'
+import { Button } from '@/components/ui/button'
 
 interface ElectricityBill {
   id: string
@@ -36,9 +38,9 @@ interface GraphDataPoint {
 
 export default function ElectricityUsageGraphPage() {
   const { session, supabase, loading: authLoading } = useAuth()
-  const router = useRouter()
   
   const [isAdmin, setIsAdmin] = useState(false)
+  const [accessChecked, setAccessChecked] = useState(false)
   const [loading, setLoading] = useState(true)
   const [bills, setBills] = useState<ElectricityBill[]>([])
   const [parties, setParties] = useState<Party[]>([])
@@ -70,6 +72,8 @@ export default function ElectricityUsageGraphPage() {
       }
     } catch (error) {
       console.error('Error checking admin status:', error)
+    } finally {
+      setAccessChecked(true)
     }
   }
 
@@ -195,47 +199,36 @@ export default function ElectricityUsageGraphPage() {
   // Color palette for different accounts
   const colors = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#06b6d4', '#84cc16', '#f97316']
 
-  if (authLoading) {
+  if (authLoading || (session && !accessChecked)) {
     return (
-      <div className="min-h-screen bg-gray-50">
-        <Header />
-        <div className="p-6">
-          <div className="max-w-md mx-auto text-center">
-            <h1 className="text-xl font-bold text-gray-900 mb-4">Loading...</h1>
-          </div>
-        </div>
-      </div>
+      <AppShell>
+        <EmptyState title="Loading usage" />
+      </AppShell>
+    )
+  }
+
+  if (!session) {
+    return (
+      <AppShell>
+        <EmptyState title="Sign in to view usage" action={<Link href="/login" className="text-sm font-medium text-green-800 underline">Sign in</Link>} />
+      </AppShell>
     )
   }
 
   if (!isAdmin) {
     return (
-      <div className="min-h-screen bg-gray-50">
-        <Header />
-        <div className="p-6">
-          <div className="max-w-md mx-auto text-center">
-            <h1 className="text-xl font-bold text-gray-900 mb-4">Access Denied</h1>
-            <p className="text-gray-600">You need admin privileges to view this page.</p>
-          </div>
-        </div>
-      </div>
+      <AppShell>
+        <EmptyState title="Admin access required" description="You need admin privileges to view electricity usage." />
+      </AppShell>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <DashboardShell>
-        <div className="p-6">
-          <Header />
-          
-          <div className="max-w-6xl mx-auto">
-            <div className="mb-6">
-              <h1 className="text-2xl font-bold text-gray-900 mb-2">Electricity Usage Graph</h1>
-              <p className="text-gray-600">View average daily electricity consumption over time</p>
-            </div>
+    <AppShell>
+      <PageFrame title="Electricity usage" description="Average daily electricity consumption over time.">
 
             {/* Account Selection */}
-            <div className="bg-white rounded-lg shadow p-6 mb-6">
+            <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
               <h2 className="text-lg font-semibold mb-4">Select Accounts</h2>
               <div className="flex flex-wrap gap-2 mb-4">
                 {getAccountNumbersWithParties().map(({ accountNumber, partyName }) => (
@@ -253,23 +246,17 @@ export default function ElectricityUsageGraphPage() {
                 ))}
               </div>
               <div className="flex gap-2">
-                <button
-                  onClick={handleSelectAllAccounts}
-                  className="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
-                >
-                  Select All
-                </button>
-                <button
-                  onClick={handleClearAllAccounts}
-                  className="px-3 py-1 text-sm bg-gray-500 text-white rounded hover:bg-gray-600"
-                >
-                  Clear All
-                </button>
+                <Button type="button" size="sm" onClick={handleSelectAllAccounts}>
+                  Select all
+                </Button>
+                <Button type="button" size="sm" variant="outline" onClick={handleClearAllAccounts}>
+                  Clear all
+                </Button>
               </div>
             </div>
 
             {/* Date Range Selection */}
-            <div className="bg-white rounded-lg shadow p-6 mb-6">
+            <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
               <h2 className="text-lg font-semibold mb-4">Date Range</h2>
               <div className="flex gap-4 items-center">
                 <div>
@@ -290,17 +277,14 @@ export default function ElectricityUsageGraphPage() {
                     className="border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
-                <button
-                  onClick={() => setDateRange({ start: '', end: '' })}
-                  className="px-3 py-2 text-sm bg-gray-500 text-white rounded hover:bg-gray-600"
-                >
-                  All Time
-                </button>
+                <Button type="button" variant="outline" onClick={() => setDateRange({ start: '', end: '' })}>
+                  All time
+                </Button>
               </div>
             </div>
 
             {/* Graph */}
-            <div className="bg-white rounded-lg shadow p-6">
+            <div className="bg-white rounded-lg border border-gray-200 p-6">
               <h2 className="text-lg font-semibold mb-4">Usage Graph</h2>
               
               {loading ? (
@@ -550,28 +534,26 @@ export default function ElectricityUsageGraphPage() {
               {/* Summary Stats */}
               {graphData.length > 0 && (
                 <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="bg-blue-50 p-4 rounded-lg">
-                    <h3 className="font-semibold text-blue-900">Total Data Points</h3>
-                    <p className="text-2xl font-bold text-blue-600">{graphData.length}</p>
+                  <div className="rounded-lg border border-gray-200 bg-white p-4">
+                    <h3 className="text-sm font-medium text-gray-600">Data points</h3>
+                    <p className="text-2xl font-semibold tabular-nums">{graphData.length}</p>
                   </div>
-                  <div className="bg-green-50 p-4 rounded-lg">
-                    <h3 className="font-semibold text-green-900">Average Usage</h3>
-                    <p className="text-2xl font-bold text-green-600">
+                  <div className="rounded-lg border border-gray-200 bg-white p-4">
+                    <h3 className="text-sm font-medium text-gray-600">Average usage</h3>
+                    <p className="text-2xl font-semibold tabular-nums text-green-800">
                       {(graphData.reduce((sum, d) => sum + d.unitsPerDay, 0) / graphData.length).toFixed(2)} kWh/day
                     </p>
                   </div>
-                  <div className="bg-purple-50 p-4 rounded-lg">
-                    <h3 className="font-semibold text-purple-900">Peak Usage</h3>
-                    <p className="text-2xl font-bold text-purple-600">
+                  <div className="rounded-lg border border-gray-200 bg-white p-4">
+                    <h3 className="text-sm font-medium text-gray-600">Peak usage</h3>
+                    <p className="text-2xl font-semibold tabular-nums">
                       {Math.max(...graphData.map(d => d.unitsPerDay)).toFixed(2)} kWh/day
                     </p>
                   </div>
                 </div>
               )}
             </div>
-          </div>
-        </div>
-      </DashboardShell>
-    </div>
+      </PageFrame>
+    </AppShell>
   )
 }

@@ -3,8 +3,10 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import supabase from "@/lib/supabaseClient"
-import Header from "@/components/Header"
+import AppShell from "@/components/AppShell"
+import PageFrame from "@/components/PageFrame"
+import Alert from "@/components/Alert"
+import { Button } from "@/components/ui/button"
 
 interface User {
   user_id: string
@@ -36,18 +38,24 @@ export default function ManageRolesPage() {
   }
 
   const handlePromote = async (userId: string) => {
-    const { error } = await supabase
-      .from("user_roles")
-      .upsert({ user_id: userId, role: "admin" })
-
-    if (error) setError(error.message)
-    else fetchUsers()
+    try {
+      const response = await fetch('/api/users', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, role: 'admin' }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Failed to update role')
+      fetchUsers()
+    } catch (err: any) {
+      setError(err.message)
+    }
   }
 
   return (
-    <div className="p-6 max-w-md mx-auto">
-      <Header />
-      <h1 className="text-xl font-bold mb-4">Manage Roles</h1>
+    <AppShell>
+      <PageFrame title="Roles" width="3xl" description="Promote a Farm Cashbook user to admin.">
+      <p className="text-sm text-gray-600 mb-4">Farm Cashbook accounts only.</p>
 
       <h2 className="font-bold mb-2">User Roles:</h2>
       <ul className="space-y-2">
@@ -58,18 +66,16 @@ export default function ManageRolesPage() {
               <span className="text-xs text-gray-500">Role: {user.role}</span>
             </div>
             {user.role !== "admin" && (
-              <button
-                className="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 text-sm"
-                onClick={() => handlePromote(user.user_id)}
-              >
-                Promote to Admin
-              </button>
+              <Button type="button" size="sm" onClick={() => handlePromote(user.user_id)}>
+                Promote to admin
+              </Button>
             )}
           </li>
         ))}
       </ul>
 
-      {error && <p className="text-red-600 mt-2">{error}</p>}
-    </div>
+      {error ? <Alert tone="error">{error}</Alert> : null}
+      </PageFrame>
+    </AppShell>
   )
 }

@@ -11,7 +11,8 @@ const publicPaths = [
   '/login', 
   '/signup', 
   '/forgot-password', 
-  '/reset-password', 
+  '/reset-password',
+  '/wrong-app',
 ]
 
 // These routes confirm a recovery link and set a new password.
@@ -26,7 +27,7 @@ const passwordResetApiPaths = [
 const STATIC_ASSET_PATH = /\.(?:png|jpe?g|gif|webp|svg|ico|json|txt|xml|webmanifest|js|css|map|woff2?)$/i
 
 // List of admin-only paths
-const adminPaths = ['/dashboard/admin', '/api/admin', '/api/admin/invite', '/manage-roles', '/manage-parties', '/add-expense', '/add-payment', '/dashboard/admin/invite', '/audit-logs', '/publishing']
+const adminPaths = ['/dashboard/admin', '/api/admin', '/api/admin/invite', '/manage-roles', '/manage-users', '/manage-parties', '/add-expense', '/add-payment', '/dashboard/admin/invite', '/audit-logs', '/publishing']
 
 export async function middleware(req: NextRequest) {
   // Serve icons, the manifest, and the service worker as files.
@@ -67,8 +68,16 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(redirectUrl)
   }
 
-  // If this is an admin path, check admin status
-  if (isAdminPath && user) {
+  // Membership is a row in user_roles. A login created for another
+  // application on the shared auth database is not a cashbook user.
+  let membershipRole: string | null = null
+  let membershipKnown = false
+  if (user) {
+    const isPasswordReset =
+      req.nextUrl.pathname.startsWith('/reset-password') ||
+      req.nextUrl.pathname.startsWith('/forgot-password')
+    const isWrongApp = req.nextUrl.pathname.startsWith('/wrong-app')
+
     try {
       const { data: roleData, error: roleError } = await supabase
         .from('user_roles')
@@ -77,21 +86,34 @@ export async function middleware(req: NextRequest) {
         .maybeSingle()
 
       if (roleError) {
-        console.error('Error checking admin status:', roleError)
-        const redirectUrl = req.nextUrl.clone()
-        redirectUrl.pathname = '/dashboard'
-        return NextResponse.redirect(redirectUrl)
-      }
-
-      if (!roleData || roleData.role !== 'admin') {
-        // If not admin, redirect to dashboard
-        const redirectUrl = req.nextUrl.clone()
-        redirectUrl.pathname = '/dashboard'
-        return NextResponse.redirect(redirectUrl)
+        console.error('Error checking cashbook membership:', roleError)
+        if (isAdminPath) {
+          const redirectUrl = req.nextUrl.clone()
+          redirectUrl.pathname = '/dashboard'
+          return NextResponse.redirect(redirectUrl)
+        }
+      } else {
+        membershipKnown = true
+        membershipRole = roleData?.role ?? null
       }
     } catch (error) {
-      // On error, redirect to dashboard
-      console.error('Error in admin check:', error)
+      console.error('Error in membership check:', error)
+    }
+
+    if (membershipKnown && !membershipRole && !isPasswordReset && !isWrongApp) {
+      if (req.nextUrl.pathname.startsWith('/api/')) {
+        return NextResponse.json(
+          { error: 'This account is not a Farm Cashbook user' },
+          { status: 403 }
+        )
+      }
+      const redirectUrl = req.nextUrl.clone()
+      redirectUrl.pathname = '/wrong-app'
+      redirectUrl.search = ''
+      return NextResponse.redirect(redirectUrl)
+    }
+
+    if (isAdminPath && membershipRole !== 'admin') {
       const redirectUrl = req.nextUrl.clone()
       redirectUrl.pathname = '/dashboard'
       return NextResponse.redirect(redirectUrl)
@@ -101,7 +123,7 @@ export async function middleware(req: NextRequest) {
   // If there is a user and they're on a public path (like login), 
   // redirect them to the dashboard. A recovery session has to stay on
   // the reset page long enough to choose a new password.
-  if (user && isPublicPath && !req.nextUrl.pathname.startsWith('/reset-password')) {
+  if (user && isPublicPath && !req.nextUrl.pathname.startsWith('/reset-password') && !req.nextUrl.pathname.startsWith('/wrong-app')) {
     const redirectUrl = req.nextUrl.clone()
     redirectUrl.pathname = '/dashboard'
     return NextResponse.redirect(redirectUrl)
@@ -112,17 +134,8 @@ export async function middleware(req: NextRequest) {
     const requestHeaders = new Headers(req.headers)
     requestHeaders.set('x-user-id', user.id)
     
-    // Only set admin role if we've confirmed the user is an admin
-    if (isAdminPath) {
-      const { data: roleData } = await supabase
-        .from('user_roles')
-        .select('role')
-        .eq('user_id', user.id)
-        .maybeSingle()
-      
-      if (roleData?.role === 'admin') {
-        requestHeaders.set('x-user-role', 'admin')
-      }
+    if (isAdminPath && membershipRole === 'admin') {
+      requestHeaders.set('x-user-role', 'admin')
     }
 
     if (session?.access_token) {

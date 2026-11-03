@@ -2,7 +2,13 @@
 
 import { useState, useEffect, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
+import Link from "next/link"
 import supabase from "@/lib/supabaseClient"
+import AuthFrame from "@/components/AuthFrame"
+import Alert from "@/components/Alert"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { FormField } from "@/components/FormField"
 
 function InvitedSignupContent() {
   const router = useRouter()
@@ -76,7 +82,10 @@ function InvitedSignupContent() {
         email,
         password,
         options: {
-          emailRedirectTo: `https://books.landlife.au/auth/callback`
+          emailRedirectTo: `https://books.landlife.au/auth/callback`,
+          data: {
+            app: 'cashbook'
+          }
         }
       })
 
@@ -101,97 +110,58 @@ function InvitedSignupContent() {
 
   if (validatingToken) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <p className="text-gray-600">Validating invitation...</p>
-        </div>
-      </div>
+      <AuthFrame title="Complete your registration">
+        <p className="text-center text-sm text-gray-600">Checking the invitation...</p>
+      </AuthFrame>
     )
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
-        <div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-            Complete your registration
-          </h2>
+    <AuthFrame title="Complete your registration">
+      <form className="space-y-4" onSubmit={handleSignUp}>
+        {error ? <Alert tone="error">{error}</Alert> : null}
+        <FormField id="email" label="Email address">
+          <Input id="email" type="email" value={email} disabled />
+        </FormField>
+        <FormField id="password" label="Password">
+          <Input
+            id="password"
+            type="password"
+            required
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="new-password"
+          />
+        </FormField>
+        <FormField id="confirm-password" label="Confirm password">
+          <Input
+            id="confirm-password"
+            type="password"
+            required
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            autoComplete="new-password"
+          />
+        </FormField>
+        <Button type="submit" className="w-full" disabled={loading || !email}>
+          {loading ? "Creating account..." : "Create account"}
+        </Button>
+        <div className="text-center text-sm">
+          <Link href="/login" className="font-medium text-green-800 hover:underline">
+            Already have an account? Sign in
+          </Link>
         </div>
-        <form className="mt-8 space-y-6" onSubmit={handleSignUp}>
-          {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded relative" role="alert">
-              <span className="block sm:inline">{error}</span>
-            </div>
-          )}
-
-          <div>
-            <label htmlFor="email" className="block text-sm font-medium text-gray-700">
-              Email address
-            </label>
-            <input
-              id="email"
-              type="email"
-              value={email}
-              disabled
-              className="mt-1 appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 text-gray-700 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-            />
-          </div>
-
-          <div>
-            <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-              Password
-            </label>
-            <input
-              id="password"
-              type="password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="mt-1 appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-              placeholder="Enter your password"
-            />
-          </div>
-
-          <div>
-            <label htmlFor="confirm-password" className="block text-sm font-medium text-gray-700">
-              Confirm Password
-            </label>
-            <input
-              id="confirm-password"
-              type="password"
-              required
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              className="mt-1 appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-              placeholder="Confirm your password"
-            />
-          </div>
-
-          <div>
-            <button
-              type="submit"
-              disabled={loading || !email}
-              className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-            >
-              {loading ? "Creating account..." : "Create Account"}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+      </form>
+    </AuthFrame>
   )
 }
 
 export default function InvitedSignupPage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen bg-gray-100 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
-        <div className="sm:mx-auto sm:w-full sm:max-w-md">
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-            Loading...
-          </h2>
-        </div>
-      </div>
+      <AuthFrame title="Complete your registration">
+        <p className="text-center text-sm text-gray-600">Loading...</p>
+      </AuthFrame>
     }>
       <InvitedSignupContent />
     </Suspense>

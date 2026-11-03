@@ -1,17 +1,24 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import Link from "next/link"
 import supabase from "@/lib/supabaseClient"
-import Header from "@/components/Header"
+import AppShell from "@/components/AppShell"
+import PageFrame from "@/components/PageFrame"
+import Alert from "@/components/Alert"
+import { fieldControlClass, FormField } from "@/components/FormField"
+import { Button } from "@/components/ui/button"
+import { todayISO } from "@/lib/format"
 
 export default function AddPaymentPage() {
   const [partyId, setPartyId] = useState("")
   const [amount, setAmount] = useState("")
-  const [paymentDate, setPaymentDate] = useState("")
+  const [paymentDate, setPaymentDate] = useState(todayISO())
   const [description, setDescription] = useState("")
   const [sourceType, setSourceType] = useState("Bank deposit")
   const [parties, setParties] = useState<any[]>([])
   const [error, setError] = useState("")
+  const [notice, setNotice] = useState("")
 
   useEffect(() => {
     loadParties()
@@ -53,66 +60,59 @@ export default function AddPaymentPage() {
     if (insertError) {
       setError(insertError.message)
     } else {
-      window.location.href = "/dashboard"
+      setNotice("Payment saved.")
+      setAmount("")
+      setDescription("")
+      setPaymentDate(todayISO())
+      setSourceType("Bank deposit")
     }
   }
 
   return (
-    <div className="p-6 max-w-3xl mx-auto">
-      <Header />
-      <h1 className="text-xl font-bold mb-4">Add Payment</h1>
-      {error && <p className="text-red-600">{error}</p>}
-      <form onSubmit={handleSubmit} className="space-y-4">
-
-        <div>
-          <label>Party:</label>
-          <select className="border p-2 w-full" value={partyId} onChange={(e) => setPartyId(e.target.value)}>
+    <AppShell>
+      <PageFrame title="Add payment" width="3xl">
+      {notice ? <Alert tone="success">{notice}</Alert> : null}
+      {error ? <Alert tone="error">{error}</Alert> : null}
+      <form onSubmit={handleSubmit} className="space-y-4 rounded-lg border border-gray-200 bg-white p-6">
+        <FormField id="party" label="Party">
+          <select id="party" className={fieldControlClass} value={partyId} onChange={(e) => setPartyId(e.target.value)}>
             {parties.map((party: any) => (
               <option key={party.id} value={party.id}>
                 {party.name}
               </option>
             ))}
           </select>
-        </div>
+        </FormField>
 
-        <div>
-          <label>Amount:</label>
-          <input className="border p-2 w-full" type="number" value={amount} onChange={(e) => setAmount(e.target.value)} required />
-        </div>
+        <FormField id="amount" label="Amount">
+          <input id="amount" className={fieldControlClass} type="number" min="0" step="0.01" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} required />
+        </FormField>
 
-        <div>
-          <label>Payment Date:</label>
-          <input className="border p-2 w-full" type="date" value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} required />
-        </div>
+        <FormField id="payment-date" label="Payment date">
+          <input id="payment-date" className={fieldControlClass} type="date" value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} required />
+        </FormField>
 
-        <div>
-          <label>Description:</label>
-          <input className="border p-2 w-full" value={description} onChange={(e) => setDescription(e.target.value)} />
-        </div>
+        <FormField id="description" label="Description">
+          <input id="description" className={fieldControlClass} value={description} onChange={(e) => setDescription(e.target.value)} />
+        </FormField>
 
-        <div>
-          <label>Source Type:</label>
-          <select className="border p-2 w-full" value={sourceType} onChange={(e) => setSourceType(e.target.value)}>
+        <FormField id="source-type" label="Source type">
+          <select id="source-type" className={fieldControlClass} value={sourceType} onChange={(e) => setSourceType(e.target.value)}>
             <option value="Bank deposit">Bank deposit</option>
             <option value="Payment to customer">Payment to customer</option>
             <option value="Credit transfer">Credit transfer</option>
             <option value="Credit">Credit</option>
           </select>
-        </div>
+        </FormField>
 
-        <div className="flex gap-4">
-          <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
-            Save Payment
-          </button>
-          <button
-            type="button"
-            onClick={() => window.history.back()}
-            className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600"
-          >
-            Cancel
-          </button>
+        <div className="flex flex-wrap gap-2">
+          <Button type="submit">Save payment</Button>
+          <Button type="button" variant="outline" asChild>
+            <Link href="/dashboard">Cancel</Link>
+          </Button>
         </div>
       </form>
-    </div>
+      </PageFrame>
+    </AppShell>
   )
 }

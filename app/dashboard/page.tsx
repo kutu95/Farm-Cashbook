@@ -1,17 +1,21 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
-import Header from "@/components/Header"
-import { PlusCircle, DollarSign, Users, Shield, FileText } from "lucide-react"
 import Link from "next/link"
 import { useAuth } from "@/context/AuthContext"
+import AppShell from "@/components/AppShell"
+import PageFrame from "@/components/PageFrame"
+import EmptyState from "@/components/EmptyState"
+import Alert from "@/components/Alert"
+import { Button } from "@/components/ui/button"
+import { formatMoney } from "@/lib/format"
 
 export default function DashboardPage() {
   const { supabase, session } = useAuth()
-  const router = useRouter()
   const [partyBalances, setPartyBalances] = useState<any[]>([])
   const [isAdmin, setIsAdmin] = useState(false)
+  const [loadingBalances, setLoadingBalances] = useState(true)
+  const [balanceError, setBalanceError] = useState("")
 
   const checkAdminStatus = async () => {
     if (!session?.user?.id) {
@@ -60,8 +64,9 @@ export default function DashboardPage() {
   const loadBalances = async () => {
     if (!session?.user) return
 
+    setLoadingBalances(true)
+    setBalanceError("")
     try {
-      // Get all parties with their total payments and expenses in a single query
       const { data: balances, error } = await supabase
         .from('parties')
         .select(`
@@ -72,11 +77,10 @@ export default function DashboardPage() {
         `)
 
       if (error) {
-        console.error('Error loading balances:', error)
+        setBalanceError("Could not load party balances.")
         return
       }
 
-      // Calculate balances for each party
       const calculatedBalances = balances.map(party => {
         const totalPayments = (party.payments || []).reduce((sum, p) => sum + (p.amount || 0), 0)
         const totalExpenses = (party.expense_allocations || []).reduce((sum, e) => sum + (e.allocated_amount || 0), 0)
@@ -91,11 +95,20 @@ export default function DashboardPage() {
       setPartyBalances(calculatedBalances)
     } catch (err) {
       console.error('Error in loadBalances:', err)
+      setBalanceError("Could not load party balances.")
+    } finally {
+      setLoadingBalances(false)
     }
   }
 
-  // Calculate total owed to farm (reversed signs)
-  const totalOwedToFarm = partyBalances.reduce((sum, party) => sum - party.balance, 0)
+  const positions = partyBalances.map((party) => ({
+    ...party,
+    owes: -party.balance,
+  }))
+  const totalOwed = positions.reduce((sum, party) => sum + Math.max(0, party.owes), 0)
+  const totalCredit = positions.reduce((sum, party) => sum + Math.max(0, -party.owes), 0)
+  const netOwed = totalOwed - totalCredit
+  const partiesInDebit = positions.filter((party) => party.owes > 0.004).length
 
   // Combine admin check and balance loading into a single effect
   useEffect(() => {
@@ -107,6 +120,7 @@ export default function DashboardPage() {
       } else {
         setIsAdmin(false)
         setPartyBalances([])
+        setLoadingBalances(false)
       }
     }
 
@@ -118,92 +132,96 @@ export default function DashboardPage() {
   }, [isAdmin])
 
   return (
-    <div className="p-6 max-w-[1200px] mx-auto">
-      <Header />
-      <h1 className="text-xl font-bold mb-4">Dashboard</h1>
-
-      <table className="table-auto w-full border-collapse mb-6">
-        <thead>
-          <tr>
-            <th className="border px-2 py-1 text-left">Party</th>
-            <th className="border px-2 py-1 text-right">Balance</th>
-          </tr>
-        </thead>
-        <tbody>
-          {partyBalances.map((p, i) => (
-            <tr key={i}>
-              <td className="border px-2 py-1">
-                <Link 
-                  href={`/statements?party=${p.id}`}
-                  className="text-blue-600 hover:text-blue-800 hover:underline"
-                >
-                  {p.name}
-                </Link>
-              </td>
-              <td className={`border px-2 py-1 text-right ${p.balance < 0 ? 'text-red-600' : 'text-black'}`}>
-                {p.balance.toLocaleString("en-AU", { style: "currency", currency: "AUD" })}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-        <tfoot>
-          <tr className="border-t-2 font-bold bg-gray-50">
-            <td className="border px-2 py-2 text-left">Total Owed to Farm</td>
-            <td className={`border px-2 py-2 text-right ${totalOwedToFarm >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {totalOwedToFarm.toLocaleString("en-AU", { style: "currency", currency: "AUD" })}
-            </td>
-          </tr>
-        </tfoot>
-      </table>
-
-      <div className="flex flex-wrap gap-4">
-        {isAdmin && (
+    <AppShell>
+      <PageFrame
+        title="Dashboard"
+        description="A party owes the farm when charges are higher than payments. In credit means they have paid more than they have been charged. Net owed is what is still due after credits."
+        actions={isAdmin ? (
           <>
-            <Link 
-              href="/add-payment" 
-              className="flex items-center bg-blue-500 text-white px-4 py-2 rounded"
-              onClick={() => console.log('Navigating to add payment')}
-            >
-              <DollarSign className="mr-2" /> Add Payment
-            </Link>
-            <Link 
-              href="/add-expense" 
-              className="flex items-center bg-green-500 text-white px-4 py-2 rounded"
-              onClick={() => console.log('Navigating to add expense')}
-            >
-              <PlusCircle className="mr-2" /> Add Expense
-            </Link>
-            <Link 
-              href="/manage-parties" 
-              className="flex items-center bg-purple-500 text-white px-4 py-2 rounded"
-              onClick={() => console.log('Navigating to manage parties')}
-            >
-              <Users className="mr-2" /> Manage Parties
-            </Link>
-            <Link 
-              href="/manage-roles" 
-              className="flex items-center bg-yellow-500 text-white px-4 py-2 rounded"
-              onClick={() => console.log('Navigating to manage roles')}
-            >
-              <Shield className="mr-2" /> Manage Roles
-            </Link>
-            <Link 
-              href="/dashboard/admin/invite" 
-              className="flex items-center bg-indigo-500 text-white px-4 py-2 rounded"
-              onClick={() => console.log('Navigating to invite user')}
-            >
-              <Users className="mr-2" /> Invite User
-            </Link>
+            <Button asChild>
+              <Link href="/add-expense">Add expense</Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link href="/add-payment">Add payment</Link>
+            </Button>
           </>
+        ) : null}
+      >
+        {balanceError ? <Alert tone="error">{balanceError}</Alert> : null}
+
+        {isAdmin ? (
+          <div className="mb-6">
+            <h2 className="mb-2 text-sm font-medium text-gray-500">Admin</h2>
+            <div className="flex flex-wrap gap-2">
+              <Button asChild variant="outline" size="sm"><Link href="/manage-parties">Parties</Link></Button>
+              <Button asChild variant="outline" size="sm"><Link href="/manage-users">Users</Link></Button>
+              <Button asChild variant="outline" size="sm"><Link href="/manage-roles">Roles</Link></Button>
+              <Button asChild variant="outline" size="sm"><Link href="/dashboard/admin/invite">Invite</Link></Button>
+              <Button asChild variant="outline" size="sm"><Link href="/audit-logs">Audit logs</Link></Button>
+              <Button asChild variant="outline" size="sm"><Link href="/publishing">Publishing</Link></Button>
+            </div>
+          </div>
+        ) : null}
+
+        {session ? <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-3">
+          <div className="rounded-lg border border-gray-200 bg-white p-4">
+            <p className="text-sm text-gray-600">{netOwed >= 0 ? "Net owed to farm" : "Net credit with parties"}</p>
+            <p className="mt-1 text-2xl font-semibold tabular-nums text-gray-900">{formatMoney(Math.abs(netOwed))}</p>
+          </div>
+          <div className="rounded-lg border border-gray-200 bg-white p-4">
+            <p className="text-sm text-gray-600">Parties in debit</p>
+            <p className="mt-1 text-2xl font-semibold tabular-nums text-gray-900">{partiesInDebit}</p>
+          </div>
+          <div className="col-span-2 rounded-lg border border-gray-200 bg-white p-4 lg:col-span-1">
+            <p className="text-sm text-gray-600">Charged, still unpaid</p>
+            <p className="mt-1 text-2xl font-semibold tabular-nums text-gray-900">{formatMoney(totalOwed)}</p>
+            <p className="mt-1 text-xs text-gray-500">Credits held: {formatMoney(totalCredit)}</p>
+          </div>
+        </div> : null}
+
+        {!session ? (
+          <EmptyState title="Sign in to see balances" action={<Button asChild><Link href="/login">Sign in</Link></Button>} />
+        ) : loadingBalances ? (
+          <EmptyState title="Loading balances" />
+        ) : positions.length === 0 ? (
+          <EmptyState title="No parties yet" description="Add a party before recording expenses and payments." action={isAdmin ? <Button asChild><Link href="/manage-parties">Manage parties</Link></Button> : undefined} />
+        ) : (
+          <div className="max-h-[70vh] overflow-auto rounded-lg border border-gray-200 bg-white">
+            <table className="w-full min-w-[32rem] text-sm">
+              <thead className="sticky top-0 z-10 bg-gray-50">
+                <tr>
+                  <th className="sticky left-0 z-20 bg-gray-50 px-3 py-2 text-left font-medium">Party</th>
+                  <th className="px-3 py-2 text-right font-medium">Owes the farm</th>
+                </tr>
+              </thead>
+              <tbody>
+                {positions.map((party) => (
+                  <tr key={party.id} className="border-t border-gray-100 hover:bg-gray-50">
+                    <td className="sticky left-0 bg-white px-3 py-2">
+                      <Link href={`/statements?party=${party.id}`} className="font-medium text-green-800 underline-offset-2 hover:underline">
+                        {party.name}
+                      </Link>
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {party.owes > 0.004
+                        ? formatMoney(party.owes)
+                        : party.owes < -0.004
+                          ? `In credit ${formatMoney(-party.owes)}`
+                          : formatMoney(0)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t border-gray-200 bg-gray-50 font-medium">
+                  <td className="sticky left-0 bg-gray-50 px-3 py-2">Net owed to farm</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{formatMoney(netOwed)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
         )}
-        <Link 
-          href="/statements" 
-          className="flex items-center bg-gray-500 text-white px-4 py-2 rounded"
-          onClick={() => console.log('Navigating to statements')}
-        >
-          <FileText className="mr-2" /> Statements
-        </Link>
-      </div>
-    </div>
+      </PageFrame>
+    </AppShell>
   )
 }
