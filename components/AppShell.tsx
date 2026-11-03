@@ -11,7 +11,6 @@ import {
   PlusCircle,
   Shield,
   User,
-  UserPlus,
   Users,
   Wallet,
   Zap,
@@ -39,7 +38,6 @@ const adminItems: NavItem[] = [
   { href: "/manage-parties", label: "Parties", icon: Users },
   { href: "/manage-users", label: "Users", icon: Users },
   { href: "/manage-roles", label: "Roles", icon: Shield },
-  { href: "/dashboard/admin/invite", label: "Invite", icon: UserPlus },
   { href: "/audit-logs", label: "Audit logs", icon: FileText },
   { href: "/publishing", label: "Publishing", icon: FileText },
 ]

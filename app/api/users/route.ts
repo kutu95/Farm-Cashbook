@@ -1,8 +1,10 @@
+import { randomBytes } from 'crypto'
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 import { createClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { User } from '@supabase/supabase-js'
+import { isPlausibleEmail, sendPasswordEmail } from '@/lib/auth/password-reset'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -22,6 +24,7 @@ type CashbookUser = {
   full_name: string | null
   created_at: string | null
   last_sign_in_at: string | null
+  parties: string[]
 }
 
 async function requireAdmin() {
@@ -78,6 +81,26 @@ async function listCashbookUsers(): Promise<CashbookUser[]> {
   if (profileError) throw profileError
 
   const profileName = new Map((profiles || []).map((profile) => [profile.id, profile.full_name]))
+  const { data: subscriptions, error: subscriptionError } = ids.length
+    ? await supabaseAdmin.from('email_subscriptions').select('user_id, party_id').in('user_id', ids)
+    : { data: [], error: null }
+  if (subscriptionError) throw subscriptionError
+
+  const subscribedPartyIds = [...new Set((subscriptions || []).map((row) => row.party_id))]
+  const { data: subscribedParties, error: partyNameError } = subscribedPartyIds.length
+    ? await supabaseAdmin.from('parties').select('id, name').in('id', subscribedPartyIds)
+    : { data: [], error: null }
+  if (partyNameError) throw partyNameError
+  const partyName = new Map((subscribedParties || []).map((party) => [party.id, party.name as string]))
+
+  const partyNames = new Map<string, string[]>()
+  for (const row of subscriptions || []) {
+    const name = partyName.get(row.party_id)
+    if (!name) continue
+    const current = partyNames.get(row.user_id) || []
+    current.push(name)
+    partyNames.set(row.user_id, current)
+  }
 
   return (allRoleData || [])
     .map((role) => {
@@ -90,6 +113,7 @@ async function listCashbookUsers(): Promise<CashbookUser[]> {
         full_name: profileName.get(role.user_id) || null,
         created_at: user.created_at || role.created_at || null,
         last_sign_in_at: user.last_sign_in_at || null,
+        parties: (partyNames.get(role.user_id) || []).sort((a, b) => a.localeCompare(b)),
       }
     })
     .filter((item): item is CashbookUser => item !== null)
@@ -212,5 +236,168 @@ export async function DELETE(request: Request) {
   } catch (error) {
     console.error('Error removing user:', error)
     return NextResponse.json({ error: 'Failed to remove user' }, { status: 500 })
+  }
+}
+
+async function findAuthUserByEmail(email: string) {
+  for (let page = 1; page <= 10; page += 1) {
+    const { data, error } = await supabaseAdmin.auth.admin.listUsers({ page, perPage: 200 })
+    if (error) throw error
+    const users = (data?.users ?? []) as User[]
+    const found = users.find((user) => user.email?.toLowerCase() === email)
+    if (found) return found
+    if (data.users.length < 200) return null
+  }
+  return null
+}
+
+async function cashbookUser(userId: string) {
+  const users = await listCashbookUsers()
+  return users.find((user) => user.user_id === userId) || null
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const auth = await requireAdmin()
+    if (auth.error) return auth.error
+
+    const body = await request.json()
+
+    if (body.sendInstructions === true && typeof body.userId === 'string') {
+      const existing = await cashbookUser(body.userId)
+      if (!existing?.email) {
+        return NextResponse.json({ error: 'That person is not a Farm Cashbook user' }, { status: 404 })
+      }
+      const sent = await sendPasswordEmail(request, existing.email, 'welcome')
+      if (sent.status === 'failed') {
+        return NextResponse.json({ error: sent.error }, { status: sent.httpStatus })
+      }
+      if (sent.status === 'missing') {
+        return NextResponse.json({ error: 'No account exists for that email.' }, { status: 404 })
+      }
+      return NextResponse.json({ success: true, emailSent: true })
+    }
+
+    const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : ''
+    const fullName = typeof body.fullName === 'string' ? body.fullName.trim() : ''
+    const role = body.role === 'admin' ? 'admin' : body.role === 'user' ? 'user' : ''
+    const partyIds = Array.isArray(body.partyIds)
+      ? [...new Set(body.partyIds.filter((id: unknown): id is string => typeof id === 'string' && id.length > 0))]
+      : []
+
+    if (!isPlausibleEmail(email)) {
+      return NextResponse.json({ error: 'Enter a valid email address.' }, { status: 400 })
+    }
+    if (!role) {
+      return NextResponse.json({ error: 'Choose a role.' }, { status: 400 })
+    }
+
+    if (partyIds.length > 0) {
+      const { data: parties, error: partyError } = await supabaseAdmin
+        .from('parties')
+        .select('id')
+        .in('id', partyIds)
+      if (partyError) throw partyError
+      if ((parties || []).length !== partyIds.length) {
+        return NextResponse.json({ error: 'One of the selected parties no longer exists.' }, { status: 400 })
+      }
+    }
+
+    const existingAuthUser = await findAuthUserByEmail(email)
+    let userId = existingAuthUser?.id
+    let createdAuthUser = false
+
+    if (existingAuthUser) {
+      if (!belongsToCashbook(existingAuthUser)) {
+        return NextResponse.json(
+          { error: 'That email belongs to another application and cannot be added here.' },
+          { status: 409 }
+        )
+      }
+      const { data: membership, error: membershipError } = await supabaseAdmin
+        .from('user_roles')
+        .select('user_id')
+        .eq('user_id', existingAuthUser.id)
+        .maybeSingle()
+      if (membershipError) throw membershipError
+      if (membership) {
+        return NextResponse.json(
+          { error: 'That person already has a Farm Cashbook account. Send them a login link from the list.' },
+          { status: 409 }
+        )
+      }
+    } else {
+      const { data: created, error: createError } = await supabaseAdmin.auth.admin.createUser({
+        email,
+        password: randomBytes(32).toString('base64url'),
+        email_confirm: true,
+        user_metadata: { app: 'cashbook', full_name: fullName },
+      })
+      if (createError || !created.user) {
+        const message = createError?.message?.toLowerCase() || ''
+        if (message.includes('already') || message.includes('registered') || createError?.code === 'email_exists') {
+          return NextResponse.json(
+            { error: 'That email is already registered. Send them a login link from the list if they are a Farm Cashbook user.' },
+            { status: 409 }
+          )
+        }
+        console.error('Could not create auth user:', createError?.message)
+        return NextResponse.json({ error: 'Could not create the user.' }, { status: 500 })
+      }
+      userId = created.user.id
+      createdAuthUser = true
+    }
+
+    if (!userId) {
+      return NextResponse.json({ error: 'Could not create the user.' }, { status: 500 })
+    }
+
+    const now = new Date().toISOString()
+    const { error: profileError } = await supabaseAdmin.from('profiles').upsert({
+      id: userId,
+      email,
+      full_name: fullName,
+      updated_at: now,
+    })
+    if (profileError) {
+      if (createdAuthUser) await supabaseAdmin.auth.admin.deleteUser(userId)
+      throw profileError
+    }
+
+    const { error: roleError } = await supabaseAdmin.from('user_roles').upsert({
+      user_id: userId,
+      role,
+      updated_at: now,
+    }, { onConflict: 'user_id' })
+    if (roleError) {
+      if (createdAuthUser) await supabaseAdmin.auth.admin.deleteUser(userId)
+      throw roleError
+    }
+
+    if (partyIds.length > 0) {
+      const { error: subscriptionError } = await supabaseAdmin.from('email_subscriptions').upsert(
+        partyIds.map((partyId) => ({ user_id: userId, party_id: partyId })),
+        { onConflict: 'user_id,party_id' }
+      )
+      if (subscriptionError) throw subscriptionError
+    }
+
+    let emailSent = false
+    let emailError: string | null = null
+    if (body.sendInstructions === true) {
+      const sent = await sendPasswordEmail(request, email, 'welcome')
+      emailSent = sent.status === 'sent'
+      if (sent.status !== 'sent') emailError = sent.status === 'failed' ? sent.error : 'No account exists for that email.'
+    }
+
+    return NextResponse.json({
+      success: true,
+      user: await cashbookUser(userId),
+      emailSent,
+      emailError,
+    })
+  } catch (error) {
+    console.error('Error creating user:', error)
+    return NextResponse.json({ error: 'Could not create the user.' }, { status: 500 })
   }
 }

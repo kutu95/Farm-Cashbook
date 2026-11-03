@@ -156,7 +156,6 @@ export default function DashboardPage() {
               <Button asChild variant="outline" size="sm"><Link href="/manage-parties">Parties</Link></Button>
               <Button asChild variant="outline" size="sm"><Link href="/manage-users">Users</Link></Button>
               <Button asChild variant="outline" size="sm"><Link href="/manage-roles">Roles</Link></Button>
-              <Button asChild variant="outline" size="sm"><Link href="/dashboard/admin/invite">Invite</Link></Button>
               <Button asChild variant="outline" size="sm"><Link href="/audit-logs">Audit logs</Link></Button>
               <Button asChild variant="outline" size="sm"><Link href="/publishing">Publishing</Link></Button>
             </div>
