@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, Suspense, use } from "react"
+import { useEffect, useState, Suspense } from "react"
 import { useRouter } from "next/navigation"
 import supabase from "@/lib/supabaseClient"
 import Header from "@/components/Header"
@@ -156,10 +156,9 @@ function EditPaymentContent({ params }) {
 }
 
 export default function EditPaymentPage({ params }) {
-  const unwrappedParams = use(params)
   return (
     <Suspense fallback={<div className="p-6"><Header /><div>Loading...</div></div>}>
-      <EditPaymentContent params={unwrappedParams} />
+      <EditPaymentContent params={params} />
     </Suspense>
   )
 } 
