@@ -1,28 +1,20 @@
 name: Deploy to Server
 
+# This used to run on every push to main and SSH into the cashbook server.
+# The repository has no Actions secrets, so the step exited immediately with
+# "missing server host" and GitHub emailed a failure. GitHub-hosted runners
+# also cannot reach the server on the private network.
+# Deploy on the server, in ~/apps/cashbook:
+#   git pull origin main && npm install && npm run build && pm2 restart farm-cashbook
+
 on:
-  push:
-    branches:
-      - main
-      - master
   workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    
     steps:
-      - name: Deploy to server
-        uses: appleboy/ssh-action@master
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          script: |
-            cd ~/apps/cashbook
-            git pull origin main
-            npm install
-            npm run build
-            pm2 restart farm-cashbook || pm2 start ecosystem.config.js
-            pm2 save
-
+      - name: Deploy is not run from GitHub
+        run: |
+          echo "This workflow does not deploy the app."
+          echo "Run the deploy on the server, in ~/apps/cashbook."
