@@ -24,6 +24,12 @@ const passwordResetApiPaths = [
   '/api/auth/update-password',
 ]
 
+// The monthly statement run calls this with its own secret. The route
+// rejects any request that does not have that secret.
+const statementCronPaths = [
+  '/api/send-monthly-statements',
+]
+
 const STATIC_ASSET_PATH = /\.(?:png|jpe?g|gif|webp|svg|ico|json|txt|xml|webmanifest|js|css|map|woff2?)$/i
 
 // List of admin-only paths
@@ -38,6 +44,10 @@ export async function middleware(req: NextRequest) {
   }
 
   if (passwordResetApiPaths.some(path => req.nextUrl.pathname === path)) {
+    return NextResponse.next()
+  }
+
+  if (statementCronPaths.some(path => req.nextUrl.pathname === path)) {
     return NextResponse.next()
   }
 

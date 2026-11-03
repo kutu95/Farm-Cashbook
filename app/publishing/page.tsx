@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/context/AuthContext'
 import AppShell from '@/components/AppShell'
@@ -8,6 +8,12 @@ import PageFrame from '@/components/PageFrame'
 import EmptyState from '@/components/EmptyState'
 import { Button } from '@/components/ui/button'
 import { Save, Eye, EyeOff, Plus, Trash2 } from 'lucide-react'
+import {
+  DEFAULT_STATEMENT_EMAIL_CONTENT,
+  DEFAULT_STATEMENT_EMAIL_TITLE,
+  STATEMENT_EMAIL_PLACEHOLDERS,
+  STATEMENT_EMAIL_SLUG,
+} from '@/lib/statements/emailTemplate'
 
 interface Page {
   id: string
@@ -32,6 +38,7 @@ export default function PublishingPage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const contentRef = useRef<HTMLTextAreaElement>(null)
 
   // Form state
   const [formData, setFormData] = useState({
@@ -42,6 +49,20 @@ export default function PublishingPage() {
     is_published: false,
     is_resolution: false
   })
+  const statementEmail = selectedPage?.slug === STATEMENT_EMAIL_SLUG || formData.slug === STATEMENT_EMAIL_SLUG
+
+  const insertPlaceholder = (token: string) => {
+    const field = contentRef.current
+    const start = field?.selectionStart ?? formData.content.length
+    const end = field?.selectionEnd ?? formData.content.length
+    const next = formData.content.slice(0, start) + token + formData.content.slice(end)
+    setFormData({ ...formData, content: next })
+    requestAnimationFrame(() => {
+      field?.focus()
+      const cursor = start + token.length
+      field?.setSelectionRange(cursor, cursor)
+    })
+  }
 
   useEffect(() => {
     checkAuthAndLoadPages()
@@ -96,7 +117,27 @@ export default function PublishingPage() {
         return
       }
 
-      setPages(data || [])
+      const loaded = data || []
+      if (!loaded.some((page) => page.slug === STATEMENT_EMAIL_SLUG)) {
+        const { data: created, error: createError } = await supabase
+          .from('pages')
+          .insert({
+            slug: STATEMENT_EMAIL_SLUG,
+            title: DEFAULT_STATEMENT_EMAIL_TITLE,
+            content: DEFAULT_STATEMENT_EMAIL_CONTENT,
+            meta_description: 'Wording of the monthly statement email.',
+            is_published: false,
+            is_resolution: false,
+          })
+          .select('*')
+          .single()
+        if (createError) {
+          console.error('Error creating statement email page:', createError)
+        } else if (created) {
+          loaded.unshift(created)
+        }
+      }
+      setPages(loaded)
     } catch (err) {
       console.error('Error loading pages:', err)
       setError('Error loading pages')
@@ -139,13 +180,15 @@ export default function PublishingPage() {
     setError('')
     setSuccess('')
 
+    const slug = selectedPage?.slug === STATEMENT_EMAIL_SLUG ? STATEMENT_EMAIL_SLUG : formData.slug
+
     try {
       if (selectedPage) {
         // Update existing page
         const { error } = await supabase
           .from('pages')
           .update({
-            slug: formData.slug,
+            slug,
             title: formData.title,
             content: formData.content,
             meta_description: formData.meta_description,
@@ -192,6 +235,8 @@ export default function PublishingPage() {
   }
 
   const handleDelete = async (pageId: string) => {
+    const page = pages.find((item) => item.id === pageId)
+    if (page?.slug === STATEMENT_EMAIL_SLUG) return
     if (!confirm('Are you sure you want to delete this page?')) {
       return
     }
@@ -302,8 +347,14 @@ export default function PublishingPage() {
                               Resolution
                             </span>
                           )}
+                          {page.slug === STATEMENT_EMAIL_SLUG && (
+                            <span className="text-xs ml-2 px-2 py-1 bg-green-100 text-green-800 rounded">
+                              Statement email
+                            </span>
+                          )}
                         </div>
                       </div>
+                      {page.slug === STATEMENT_EMAIL_SLUG ? null : (
                       <button
                         onClick={(e) => {
                           e.stopPropagation()
@@ -313,6 +364,7 @@ export default function PublishingPage() {
                       >
                         <Trash2 size={14} />
                       </button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -339,16 +391,17 @@ export default function PublishingPage() {
                       </label>
                       <input
                         type="text"
-                        value={formData.slug}
+                        value={selectedPage?.slug === STATEMENT_EMAIL_SLUG ? STATEMENT_EMAIL_SLUG : formData.slug}
                         onChange={(e) => setFormData({ ...formData, slug: e.target.value })}
-                        className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        readOnly={selectedPage?.slug === STATEMENT_EMAIL_SLUG}
+                        className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 read-only:bg-gray-50"
                         placeholder="about-us"
                       />
                     </div>
 
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Title
+                        {statementEmail ? "Subject" : "Title"}
                       </label>
                       <input
                         type="text"
@@ -374,9 +427,30 @@ export default function PublishingPage() {
 
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Content
+                        {statementEmail ? "Email text" : "Content"}
                       </label>
+                      {statementEmail ? (
+                        <div className="mb-3 space-y-2">
+                          <p className="text-sm text-gray-600">
+                            The title is the email subject. This text is the message. On the 3rd of each month the statement runs to the last day of the previous month, and these codes are filled in.
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            {STATEMENT_EMAIL_PLACEHOLDERS.map((item) => (
+                              <button
+                                key={item.token}
+                                type="button"
+                                className="rounded border border-gray-300 px-2 py-1 text-left text-xs hover:bg-gray-50"
+                                onClick={() => insertPlaceholder(item.token)}
+                              >
+                                <span className="font-medium text-gray-900">{item.token}</span>
+                                <span className="mt-0.5 block text-gray-500">{item.detail}</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
                       <textarea
+                        ref={contentRef}
                         value={formData.content}
                         onChange={(e) => setFormData({ ...formData, content: e.target.value })}
                         className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
