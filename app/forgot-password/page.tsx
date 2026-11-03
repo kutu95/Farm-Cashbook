@@ -1,8 +1,6 @@
 "use client"
 
 import { useState } from "react"
-import { useRouter } from "next/navigation"
-import supabase from "@/lib/supabaseClient"
 import Link from "next/link"
 
 export default function ForgotPasswordPage() {
@@ -10,7 +8,6 @@ export default function ForgotPasswordPage() {
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
   const [loading, setLoading] = useState(false)
-  const router = useRouter()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -19,16 +16,20 @@ export default function ForgotPasswordPage() {
     setSuccess(false)
 
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `https://books.landlife.au/reset-password`,
+      const response = await fetch("/api/auth/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
       })
 
-      if (error) {
-        setError(error.message)
-      } else {
-        setSuccess(true)
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}))
+        setError(body.error || "Could not send the reset email. Try again later.")
+        return
       }
-    } catch (err) {
+
+      setSuccess(true)
+    } catch {
       setError("An unexpected error occurred")
     } finally {
       setLoading(false)
@@ -43,55 +44,56 @@ export default function ForgotPasswordPage() {
             Reset your password
           </h2>
           <p className="mt-2 text-center text-sm text-gray-600">
-            Enter your email address and we'll send you a link to reset your password.
+            Enter your email address and we&apos;ll send you a link to reset your password.
           </p>
         </div>
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-          {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded relative" role="alert">
-              <span className="block sm:inline">{error}</span>
+        {success ? (
+          <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded relative" role="alert">
+            <span className="block sm:inline">
+              Check your email for a link to reset your password.
+            </span>
+          </div>
+        ) : (
+          <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+            {error && (
+              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded relative" role="alert">
+                <span className="block sm:inline">{error}</span>
+              </div>
+            )}
+            <div>
+              <label htmlFor="email-address" className="sr-only">
+                Email address
+              </label>
+              <input
+                id="email-address"
+                name="email"
+                type="email"
+                autoComplete="email"
+                required
+                className="appearance-none rounded relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                placeholder="Email address"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
             </div>
-          )}
-          {success && (
-            <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded relative" role="alert">
-              <span className="block sm:inline">
-                Check your email for a link to reset your password.
-              </span>
+
+            <div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+              >
+                {loading ? "Sending reset link..." : "Send reset link"}
+              </button>
             </div>
-          )}
-          <div>
-            <label htmlFor="email-address" className="sr-only">
-              Email address
-            </label>
-            <input
-              id="email-address"
-              name="email"
-              type="email"
-              autoComplete="email"
-              required
-              className="appearance-none rounded relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-              placeholder="Email address"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-          </div>
+          </form>
+        )}
 
-          <div>
-            <button
-              type="submit"
-              disabled={loading}
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-            >
-              {loading ? "Sending reset link..." : "Send reset link"}
-            </button>
-          </div>
-
-          <div className="text-sm text-center">
-            <Link href="/login" className="font-medium text-blue-600 hover:text-blue-500">
-              Back to sign in
-            </Link>
-          </div>
-        </form>
+        <div className="text-sm text-center">
+          <Link href="/login" className="font-medium text-blue-600 hover:text-blue-500">
+            Back to sign in
+          </Link>
+        </div>
       </div>
     </div>
   )

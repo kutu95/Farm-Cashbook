@@ -1,4 +1,4 @@
-const CACHE_NAME = 'farm-cashbook-v3'; // Drop cached HTML that was stored for icon URLs
+const CACHE_NAME = 'farm-cashbook-v4'; // Leave app navigations to the network
 const urlsToCache = [
   '/icon-192.png',
   '/icon-512.png',
@@ -103,8 +103,22 @@ self.addEventListener('fetch', (event) => {
   }
 
   const url = new URL(event.request.url);
-  const isHTML = event.request.destination === 'document' || 
-                 event.request.headers.get('accept')?.includes('text/html');
+  if (url.origin !== self.location.origin) {
+    return;
+  }
+
+  // Next.js client navigations fetch the page URL as an RSC payload.
+  // Treating that fetch as something the worker must answer, then rejecting
+  // it, is what makes Forgot password look like it goes nowhere.
+  const accept = event.request.headers.get('accept') || '';
+  const isNextData = event.request.headers.get('RSC') === '1' ||
+                     event.request.headers.get('Next-Router-Prefetch') === '1' ||
+                     accept.includes('text/x-component');
+  if (isNextData) {
+    return;
+  }
+
+  const isHTML = event.request.destination === 'document' || accept.includes('text/html');
   const isStaticAsset = url.pathname.startsWith('/_next/static/') ||
                        url.pathname.startsWith('/icon-') ||
                        url.pathname.endsWith('.png') ||
@@ -131,23 +145,24 @@ self.addEventListener('fetch', (event) => {
           }
           return response;
         })
-        .catch((error) => {
+        .catch(async (error) => {
           // Network failed, try cache as fallback
           console.warn('Network request failed, trying cache:', error);
-          return caches.match(event.request)
-            .then((cachedResponse) => {
-              if (cachedResponse) {
-                return cachedResponse;
-              }
-              // No cache available, return offline page
-              if (event.request.destination === 'document') {
-                return caches.match('/') || new Response('Offline - Please check your connection', { 
-                  status: 503,
-                  headers: { 'Content-Type': 'text/html' }
-                });
-              }
-              throw error;
+          const cachedResponse = await caches.match(event.request);
+          if (cachedResponse) {
+            return cachedResponse;
+          }
+          if (event.request.destination === 'document') {
+            const home = await caches.match('/');
+            if (home) {
+              return home;
+            }
+            return new Response('Offline - Please check your connection', {
+              status: 503,
+              headers: { 'Content-Type': 'text/html' }
             });
+          }
+          return new Response('Offline', { status: 503 });
         })
     );
     return;
@@ -197,20 +212,6 @@ self.addEventListener('fetch', (event) => {
     );
     return;
   }
-
-  // For other requests: Network-first
-  event.respondWith(
-    fetch(event.request)
-      .then((response) => {
-        return response;
-      })
-      .catch((error) => {
-        return caches.match(event.request)
-          .then((cachedResponse) => {
-            return cachedResponse || Promise.reject(error);
-          });
-      })
-  );
 });
 
 // Activate event - clean up old caches and claim clients

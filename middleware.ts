@@ -14,6 +14,15 @@ const publicPaths = [
   '/reset-password', 
 ]
 
+// These routes confirm a recovery link and set a new password.
+// They must stay reachable while signed out, and must not bounce a
+// recovery session to the dashboard before the new password is saved.
+const passwordResetApiPaths = [
+  '/api/auth/forgot-password',
+  '/api/auth/confirm-recovery',
+  '/api/auth/update-password',
+]
+
 const STATIC_ASSET_PATH = /\.(?:png|jpe?g|gif|webp|svg|ico|json|txt|xml|webmanifest|js|css|map|woff2?)$/i
 
 // List of admin-only paths
@@ -24,6 +33,10 @@ export async function middleware(req: NextRequest) {
   // These must stay available after sign-in; otherwise the header logo
   // and the manifest icons are redirected to an HTML page.
   if (STATIC_ASSET_PATH.test(req.nextUrl.pathname)) {
+    return NextResponse.next()
+  }
+
+  if (passwordResetApiPaths.some(path => req.nextUrl.pathname === path)) {
     return NextResponse.next()
   }
 
@@ -86,8 +99,9 @@ export async function middleware(req: NextRequest) {
   }
 
   // If there is a user and they're on a public path (like login), 
-  // redirect them to the dashboard
-  if (user && isPublicPath) {
+  // redirect them to the dashboard. A recovery session has to stay on
+  // the reset page long enough to choose a new password.
+  if (user && isPublicPath && !req.nextUrl.pathname.startsWith('/reset-password')) {
     const redirectUrl = req.nextUrl.clone()
     redirectUrl.pathname = '/dashboard'
     return NextResponse.redirect(redirectUrl)
