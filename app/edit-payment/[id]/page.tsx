@@ -4,6 +4,7 @@ import { useEffect, useState, Suspense } from "react"
 import { useRouter } from "next/navigation"
 import supabase from "@/lib/supabaseClient"
 import Header from "@/components/Header"
+import DocumentAttachments from "@/components/DocumentAttachments"
 
 function EditPaymentContent({ params }) {
   const router = useRouter()
@@ -151,6 +152,16 @@ function EditPaymentContent({ params }) {
           </button>
         </div>
       </form>
+
+      <div className="mt-8 border-t pt-6">
+        <DocumentAttachments 
+          paymentId={paymentId}
+          onUpdate={() => {
+            // Optionally refresh payment data if needed
+            loadPayment()
+          }}
+        />
+      </div>
     </div>
   )
 }
