@@ -4,6 +4,11 @@ import { useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import supabase from "@/lib/supabaseClient"
+import AuthFrame from "@/components/AuthFrame"
+import Alert from "@/components/Alert"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { FormField } from "@/components/FormField"
 
 export default function SignUpPage() {
   const [email, setEmail] = useState("")
@@ -24,7 +29,10 @@ export default function SignUpPage() {
         email,
         password,
         options: {
-          emailRedirectTo: `https://books.landlife.au/auth/callback`
+          emailRedirectTo: `https://books.landlife.au/auth/callback`,
+          data: {
+            app: 'cashbook'
+          }
         }
       })
 
@@ -42,31 +50,12 @@ export default function SignUpPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
-        <div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-            Create an Account
-          </h2>
-        </div>
-        <form className="mt-8 space-y-6" onSubmit={handleSignUp}>
-          {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded relative" role="alert">
-              <span className="block sm:inline">{error}</span>
-            </div>
-          )}
-          {success && (
-            <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded relative" role="alert">
-              <span className="block sm:inline">
-                Please check your email to confirm your account.
-              </span>
-            </div>
-          )}
-          <div>
-            <label htmlFor="email" className="block text-sm font-medium text-gray-700">
-              Email address
-            </label>
-            <input
+    <AuthFrame title="Create an account">
+        <form className="space-y-4" onSubmit={handleSignUp}>
+          {error ? <Alert tone="error">{error}</Alert> : null}
+          {success ? <Alert tone="success">Please check your email to confirm your account.</Alert> : null}
+          <FormField id="email" label="Email address">
+            <Input
               id="email"
               name="email"
               type="email"
@@ -74,15 +63,11 @@ export default function SignUpPage() {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="mt-1 appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
             />
-          </div>
+          </FormField>
 
-          <div>
-            <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-              Password
-            </label>
-            <input
+          <FormField id="password" label="Password">
+            <Input
               id="password"
               name="password"
               type="password"
@@ -90,27 +75,17 @@ export default function SignUpPage() {
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="mt-1 appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
             />
-          </div>
-
-          <div>
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-            >
-              {loading ? "Creating account..." : "Create Account"}
-            </button>
-          </div>
-
-          <div className="text-sm text-center">
-            <Link href="/login" className="font-medium text-blue-600 hover:text-blue-500">
+          </FormField>
+          <Button type="submit" disabled={loading} className="w-full">
+            {loading ? "Creating account..." : "Create account"}
+          </Button>
+          <div className="text-center text-sm">
+            <Link href="/login" className="font-medium text-green-800 hover:underline">
               Already have an account? Sign in
             </Link>
           </div>
         </form>
-      </div>
-    </div>
+    </AuthFrame>
   )
 }

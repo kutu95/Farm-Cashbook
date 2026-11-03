@@ -1,12 +1,18 @@
 "use client"
 
 import { useEffect, useState, Suspense } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
+import Link from "next/link"
+import { useSearchParams } from "next/navigation"
 import supabase from "@/lib/supabaseClient"
-import Header from "@/components/Header"
+import AppShell from "@/components/AppShell"
+import PageFrame from "@/components/PageFrame"
+import EmptyState from "@/components/EmptyState"
+import Alert from "@/components/Alert"
+import { AllocationFields, fieldControlClass, FormField } from "@/components/FormField"
+import { Button } from "@/components/ui/button"
+import DocumentAttachments from "@/components/DocumentAttachments"
 
 function EditExpenseContent() {
-  const router = useRouter()
   const searchParams = useSearchParams()
   const expenseId = searchParams.get("id")
 
@@ -17,6 +23,7 @@ function EditExpenseContent() {
   const [allocations, setAllocations] = useState<any[]>([])
   const [parties, setParties] = useState<any[]>([])
   const [error, setError] = useState("")
+  const [notice, setNotice] = useState("")
 
   useEffect(() => {
     if (expenseId) loadExpense()
@@ -97,8 +104,16 @@ function EditExpenseContent() {
       await supabase.from("expense_allocations").insert(allocationInserts)
     }
 
-    router.push("/dashboard")
+    setNotice("Changes saved.")
   }
+
+  const allocationModeName = allocationMode === "percent" ? "percentage" : "fixed"
+  const target = allocationModeName === "percentage" ? 100 : Number.parseFloat(amount || "0") || 0
+  const allocated = allocations.reduce((sum, row) => {
+    const raw = allocationModeName === "percentage" ? row.percent : row.amount
+    return sum + (Number.parseFloat(raw || "0") || 0)
+  }, 0)
+  const splitMatches = target > 0 && Math.abs(target - allocated) < 0.001
 
   const handleAllocationChange = (index: number, field: string, value: string) => {
     const newAllocations = [...allocations]
@@ -107,60 +122,67 @@ function EditExpenseContent() {
   }
 
   return (
-    <div className="p-6 max-w-3xl mx-auto">
-      <Header />
-      <h1 className="text-xl font-bold mb-4">Edit Expense</h1>
-      {error && <p className="text-red-600">{error}</p>}
+    <AppShell>
+      <PageFrame title="Edit expense" width="3xl">
+      {notice ? <Alert tone="success">{notice}</Alert> : null}
+      {error ? <Alert tone="error">{error}</Alert> : null}
 
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label>Amount:</label>
-          <input className="border p-2 w-full" type="number" value={amount} onChange={(e) => setAmount(e.target.value)} required />
-        </div>
-
-        <div>
-          <label>Expense Date:</label>
-          <input className="border p-2 w-full" type="date" value={expenseDate} onChange={(e) => setExpenseDate(e.target.value)} required />
-        </div>
-
-        <div>
-          <label>Description:</label>
-          <input className="border p-2 w-full" value={description} onChange={(e) => setDescription(e.target.value)} />
-        </div>
-
-        <div>
-          <label>Allocation Mode:</label>
-          <select className="border p-2 w-full" value={allocationMode} onChange={(e) => setAllocationMode(e.target.value)}>
-            <option value="fixed">Fixed Amounts</option>
-            <option value="percent">Percentages</option>
+      <form onSubmit={handleSubmit} className="space-y-4 rounded-lg border border-gray-200 bg-white p-6">
+        <FormField id="amount" label="Amount">
+          <input id="amount" className={fieldControlClass} type="number" min="0" step="0.01" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} required />
+        </FormField>
+        <FormField id="expense-date" label="Expense date">
+          <input id="expense-date" className={fieldControlClass} type="date" value={expenseDate} onChange={(e) => setExpenseDate(e.target.value)} required />
+        </FormField>
+        <FormField id="description" label="Description">
+          <input id="description" className={fieldControlClass} value={description} onChange={(e) => setDescription(e.target.value)} />
+        </FormField>
+        <FormField id="allocation-mode" label="Allocation type">
+          <select id="allocation-mode" className={fieldControlClass} value={allocationMode} onChange={(e) => setAllocationMode(e.target.value)}>
+            <option value="fixed">Fixed amount</option>
+            <option value="percent">Percentage</option>
           </select>
+        </FormField>
+        <AllocationFields
+          mode={allocationModeName}
+          target={target}
+          rows={allocations.map((row) => ({
+            partyId: row.party_id,
+            name: parties.find((party) => party.id === row.party_id)?.name || "Party",
+            value: allocationMode === "fixed" ? row.amount : row.percent,
+          }))}
+          onChange={(partyId, value) => {
+            const index = allocations.findIndex((row) => row.party_id === partyId)
+            if (index >= 0) handleAllocationChange(index, allocationMode === "fixed" ? "amount" : "percent", value)
+          }}
+        />
+        <div className="flex flex-wrap gap-2">
+          <Button type="submit" disabled={!splitMatches}>Save changes</Button>
+          <Button type="button" variant="outline" asChild>
+            <Link href="/statements">Cancel</Link>
+          </Button>
         </div>
-
-        <div>
-          <label>Allocations:</label>
-          {allocations.map((a, idx) => (
-            <div key={a.party_id} className="flex space-x-2 mb-2">
-              <div className="w-1/3">{parties.find(p => p.id === a.party_id)?.name}</div>
-              {allocationMode === "fixed" ? (
-                <input className="border p-2 w-2/3" type="number" value={a.amount}
-                  onChange={(e) => handleAllocationChange(idx, "amount", e.target.value)} />
-              ) : (
-                <input className="border p-2 w-2/3" type="number" value={a.percent}
-                  onChange={(e) => handleAllocationChange(idx, "percent", e.target.value)} />
-              )}
-            </div>
-          ))}
-        </div>
-
-        <button className="bg-blue-600 text-white px-4 py-2 rounded">Save Changes</button>
       </form>
-    </div>
+
+      {expenseId && (
+        <div className="mt-8 border-t pt-6">
+          <DocumentAttachments 
+            expenseId={expenseId}
+            onUpdate={() => {
+              // Optionally refresh expense data if needed
+              loadExpense()
+            }}
+          />
+        </div>
+      )}
+      </PageFrame>
+    </AppShell>
   )
 }
 
 export default function EditExpensePage() {
   return (
-    <Suspense fallback={<div className="p-6"><Header /><div>Loading...</div></div>}>
+    <Suspense fallback={<AppShell><EmptyState title="Loading expense" /></AppShell>}>
       <EditExpenseContent />
     </Suspense>
   )

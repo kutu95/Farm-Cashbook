@@ -1,19 +1,24 @@
 "use client"
 
-import { useEffect, useState, useRef } from "react"
+import { useEffect, useState } from "react"
+import Link from "next/link"
 import supabase from "@/lib/supabaseClient"
-import Header from "@/components/Header"
+import AppShell from "@/components/AppShell"
+import PageFrame from "@/components/PageFrame"
+import Alert from "@/components/Alert"
+import { AllocationFields, fieldControlClass, FormField } from "@/components/FormField"
+import { Button } from "@/components/ui/button"
+import { todayISO } from "@/lib/format"
 
 export default function AddExpensePage() {
   const [description, setDescription] = useState("")
   const [amount, setAmount] = useState("")
-  const [expenseDate, setExpenseDate] = useState("")
+  const [expenseDate, setExpenseDate] = useState(todayISO())
   const [allocationType, setAllocationType] = useState<"fixed" | "percentage">("fixed")
   const [allocations, setAllocations] = useState<any[]>([])
   const [parties, setParties] = useState<any[]>([])
   const [error, setError] = useState("")
-  const [importing, setImporting] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [notice, setNotice] = useState("")
 
   useEffect(() => {
     loadParties()
@@ -34,58 +39,6 @@ export default function AddExpensePage() {
       prev.map((alloc) => (alloc.party_id === party_id ? { ...alloc, amount: value } : alloc))
     )
   }
-
-  const handleBillImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setImporting(true);
-    setError("");
-
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-
-      const response = await fetch('/api/parse-bill', {
-        method: 'POST',
-        body: formData,
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to import bill');
-      }
-
-      // Update form fields with bill data
-      setDescription(data.description);
-      setAmount(data.amount.toString());
-      setExpenseDate(data.date);
-      setAllocationType("percentage");
-
-      // Update allocations
-      setAllocations(prev => 
-        prev.map(alloc => {
-          const matchingAllocation = data.allocations.find(
-            (a: any) => a.party_id === alloc.party_id
-          );
-          return {
-            ...alloc,
-            amount: matchingAllocation ? matchingAllocation.percentage.toString() : "0"
-          };
-        })
-      );
-
-      // Reset file input
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to import bill');
-    } finally {
-      setImporting(false);
-    }
-  };
 
   const handleSubmit = async (e: any) => {
     e.preventDefault()
@@ -131,102 +84,71 @@ export default function AddExpensePage() {
       return
     }
 
-    window.location.href = "/dashboard"
+    setNotice("Expense saved.")
+    setDescription("")
+    setAmount("")
+    setExpenseDate(todayISO())
+    setAllocations(parties.map((party: any) => ({ party_id: party.id, amount: "" })))
   }
 
+  const target = allocationType === "percentage" ? 100 : Number.parseFloat(amount || "0") || 0
+  const allocated = allocations.reduce((sum, alloc) => sum + (Number.parseFloat(alloc.amount || "0") || 0), 0)
+  const splitMatches = target > 0 && Math.abs(target - allocated) < 0.001
+
   return (
-    <div className="p-6 max-w-3xl mx-auto">
-      <Header />
-      <h1 className="text-xl font-bold mb-4">Add Expense</h1>
+    <AppShell>
+      <PageFrame
+        title="Add expense"
+        width="3xl"
+        description="Synergy electricity bills are uploaded on Electricity bills, which also records the expense."
+      >
+      {notice ? <Alert tone="success">{notice}</Alert> : null}
+      {error ? <Alert tone="error">{error}</Alert> : null}
       
-      <div className="mb-6">
-        <input
-          type="file"
-          accept=".pdf"
-          onChange={handleBillImport}
-          className="hidden"
-          ref={fileInputRef}
-        />
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={importing}
-          className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-        >
-          {importing ? (
-            <>
-              <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
-              Importing...
-            </>
-          ) : (
-            <>
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM6.293 6.707a1 1 0 010-1.414l3-3a1 1 0 011.414 0l3 3a1 1 0 01-1.414 1.414L11 5.414V13a1 1 0 11-2 0V5.414L7.707 6.707a1 1 0 01-1.414 0z" clipRule="evenodd" />
-              </svg>
-              Import Electricity Bill
-            </>
-          )}
-        </button>
-      </div>
+      <form onSubmit={handleSubmit} className="space-y-4 rounded-lg border border-gray-200 bg-white p-6">
+        <FormField id="description" label="Description">
+          <input id="description" className={fieldControlClass} value={description} onChange={(e) => setDescription(e.target.value)} required />
+        </FormField>
 
-      {error && <p className="text-red-600 mb-4">{error}</p>}
-      
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label>Description:</label>
-          <input className="border p-2 w-full" value={description} onChange={(e) => setDescription(e.target.value)} required />
-        </div>
+        <FormField id="amount" label="Amount">
+          <input id="amount" className={fieldControlClass} type="number" min="0" step="0.01" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} required />
+        </FormField>
 
-        <div>
-          <label>Amount:</label>
-          <input className="border p-2 w-full" type="number" value={amount} onChange={(e) => setAmount(e.target.value)} required />
-        </div>
+        <FormField id="expense-date" label="Date">
+          <input id="expense-date" className={fieldControlClass} type="date" value={expenseDate} onChange={(e) => setExpenseDate(e.target.value)} required />
+        </FormField>
 
-        <div>
-          <label>Date:</label>
-          <input className="border p-2 w-full" type="date" value={expenseDate} onChange={(e) => setExpenseDate(e.target.value)} required />
-        </div>
-
-        <div>
-          <label>Allocation Type:</label>
-          <select className="border p-2 w-full" value={allocationType} onChange={(e) => setAllocationType(e.target.value as any)}>
-            <option value="fixed">Fixed Amount</option>
+        <FormField id="allocation-type" label="Allocation type">
+          <select id="allocation-type" className={fieldControlClass} value={allocationType} onChange={(e) => setAllocationType(e.target.value as "fixed" | "percentage")}>
+            <option value="fixed">Fixed amount</option>
             <option value="percentage">Percentage</option>
           </select>
-        </div>
+        </FormField>
 
-        <div>
-          <h2 className="font-semibold mb-2">Allocations:</h2>
-          {allocations.map((alloc, idx) => (
-            <div key={idx} className="flex items-center mb-2">
-              <span className="w-1/3">{parties.find(p => p.id === alloc.party_id)?.name}:</span>
-              <input
-                type="number"
-                className="border p-2 w-1/2"
-                value={alloc.amount}
-                onChange={(e) => handleAllocationChange(alloc.party_id, e.target.value)}
-              />
-              <span className="ml-2">{allocationType === "percentage" ? "%" : "AUD"}</span>
-            </div>
-          ))}
-        </div>
+        <AllocationFields
+          mode={allocationType}
+          target={target}
+          rows={allocations.map((alloc) => ({
+            partyId: alloc.party_id,
+            name: parties.find((party) => party.id === alloc.party_id)?.name || "Party",
+            value: alloc.amount,
+          }))}
+          onChange={handleAllocationChange}
+        />
 
-        <div className="flex gap-4">
-          <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
-            Save Expense
-          </button>
-          <button
-            type="button"
-            onClick={() => window.history.back()}
-            className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600"
-          >
-            Cancel
-          </button>
+        <div className="flex flex-wrap gap-2">
+          <Button type="submit" disabled={!splitMatches}>
+            Save expense
+          </Button>
+          <Button type="button" variant="outline" asChild>
+            <Link href="/dashboard">Cancel</Link>
+          </Button>
+          <Link href="/electricity-bills" className="inline-flex h-10 items-center px-2 text-sm text-green-800 underline-offset-2 hover:underline">
+            Upload a bill instead
+          </Link>
         </div>
       </form>
-    </div>
+      </PageFrame>
+    </AppShell>
   )
 }

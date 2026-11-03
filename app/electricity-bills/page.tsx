@@ -1,10 +1,16 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import Link from 'next/link'
 import { useAuth } from '@/context/AuthContext'
-import Header from '@/components/Header'
-import DashboardShell from '@/components/DashboardShell'
+import AppShell from '@/components/AppShell'
+import PageFrame from '@/components/PageFrame'
+import EmptyState from '@/components/EmptyState'
+import Alert from '@/components/Alert'
+import { fieldControlClass } from '@/components/FormField'
+import { Button } from '@/components/ui/button'
 import { ElectricityBillData } from '@/lib/parseElectricityBill'
+import { formatDisplayDate, formatMoney } from '@/lib/format'
 
 interface ElectricityBill {
   id: string
@@ -16,7 +22,9 @@ interface ElectricityBill {
   is_estimated: boolean
   account_number: string
   bill_amount: number
+  meter_reading?: number | null
   pdf_file_path?: string
+  expense_id?: string | null
   created_at: string
   updated_at: string
 }
@@ -32,6 +40,7 @@ export default function ElectricityBillsPage() {
   const [bills, setBills] = useState<ElectricityBill[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
   const [isAdmin, setIsAdmin] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [parsingResults, setParsingResults] = useState<Array<ElectricityBillData & {fileName: string, fileUrl: string}>>([])
@@ -135,9 +144,9 @@ export default function ElectricityBillsPage() {
   }
 
   // Filter bills based on selected account number
-  const filteredBills = selectedAccountNumber 
+  const filteredBills = selectedAccountNumber
     ? bills.filter(bill => bill.account_number === selectedAccountNumber)
-    : []
+    : bills
 
   // Pagination logic
   const totalPages = Math.ceil(filteredBills.length / rowsPerPage)
@@ -154,15 +163,29 @@ export default function ElectricityBillsPage() {
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
     if (!files || files.length === 0) return
+    await processUploadedFiles(files)
+  }
+
+  const handleDroppedFiles = (fileList: FileList) => {
+    const input = fileInputRef.current
+    if (!input || fileList.length === 0) return
+    const transfer = new DataTransfer()
+    Array.from(fileList).forEach((file) => transfer.items.add(file))
+    input.files = transfer.files
+    void processUploadedFiles(input.files)
+  }
+
+  const processUploadedFiles = async (files: FileList) => {
 
     setUploading(true)
     setError('')
+    setNotice('')
     setParsingResults([])
     setFailedFiles([])
     setUploadProgress({ current: 0, total: files.length, currentFile: '' })
 
     try {
-      const results: ElectricityBillData[] = []
+      const results: Array<ElectricityBillData & { fileName: string; fileUrl: string }> = []
       const failures: Array<{fileName: string, error: string}> = []
       
       for (let i = 0; i < files.length; i++) {
@@ -241,51 +264,60 @@ export default function ElectricityBillsPage() {
     try {
       setUploading(true)
       setError('')
+      setNotice('')
       setFailedImports(new Map()) // Reset failed imports
       
       // Only save selected bills
-      const billsToSave = parsingResults.filter((_, index) => selectedParsedBills.has(index))
+      const selectedIndices = parsingResults
+        .map((_, index) => index)
+        .filter((index) => selectedParsedBills.has(index))
       
-      if (billsToSave.length === 0) {
+      if (selectedIndices.length === 0) {
         setError('No bills selected for saving')
         return
       }
       
-      setSaveProgress({ current: 0, total: billsToSave.length, currentFile: '' })
+      setSaveProgress({ current: 0, total: selectedIndices.length, currentFile: '' })
       
       const failedImportsMap = new Map<number, string>()
       const successfulIndices: number[] = []
+      const outcomes = { created: 0, linked: 0, already_recorded: 0 }
       
-      for (let i = 0; i < parsingResults.length; i++) {
+      for (let step = 0; step < selectedIndices.length; step++) {
+        const i = selectedIndices[step]
         const billData = parsingResults[i]
-        setSaveProgress({ current: successfulIndices.length + 1, total: billsToSave.length, currentFile: billData.fileName })
+        setSaveProgress({ current: step + 1, total: selectedIndices.length, currentFile: billData.fileName })
         try {
           const response = await fetch('/api/electricity-bills', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
             },
-                      body: JSON.stringify({
-            billDate: billData.billDate,
-            billDateRangeStart: billData.billDateRangeStart,
-            billDateRangeEnd: billData.billDateRangeEnd,
-            totalUnitsConsumed: billData.totalUnitsConsumed,
-            unitsPerDay: billData.unitsPerDay,
-            isEstimated: billData.isEstimated,
-            accountNumber: billData.accountNumber,
-            billAmount: billData.billAmount,
-            meterReading: billData.meterReading,
-          }),
+            body: JSON.stringify({
+              billDate: billData.billDate,
+              billDateRangeStart: billData.billDateRangeStart,
+              billDateRangeEnd: billData.billDateRangeEnd,
+              totalUnitsConsumed: billData.totalUnitsConsumed,
+              unitsPerDay: billData.unitsPerDay,
+              isEstimated: billData.isEstimated,
+              accountNumber: billData.accountNumber,
+              billAmount: billData.billAmount,
+              meterReading: billData.meterReading,
+            }),
           })
 
+          const data = await response.json()
+
           if (!response.ok) {
-            const errorData = await response.json()
-            const errorMessage = errorData.error || 'Unknown error occurred'
+            const errorMessage = data.error || 'Unknown error occurred'
             failedImportsMap.set(i, errorMessage)
             console.error(`Failed to save bill ${i}:`, errorMessage)
           } else {
             successfulIndices.push(i)
-            console.log(`Successfully saved bill ${i}`)
+            if (data.expenseStatus === 'created' || data.expenseStatus === 'linked' || data.expenseStatus === 'already_recorded') {
+              outcomes[data.expenseStatus as keyof typeof outcomes] += 1
+            }
+            console.log(`Successfully saved bill ${i}:`, data.expenseStatus)
           }
         } catch (err) {
           const errorMessage = err instanceof Error ? err.message : 'Network or processing error'
@@ -334,11 +366,27 @@ export default function ElectricityBillsPage() {
       setSelectedParsedBills(remainingSelectedBills)
       setFailedImports(updatedFailedImports)
       
+      const outcomeParts = []
+      if (outcomes.created > 0) {
+        outcomeParts.push(`${outcomes.created} new expense${outcomes.created === 1 ? '' : 's'} recorded`)
+      }
+      if (outcomes.linked > 0) {
+        outcomeParts.push(`${outcomes.linked} linked to an existing expense`)
+      }
+      if (outcomes.already_recorded > 0) {
+        outcomeParts.push(`${outcomes.already_recorded} already in the cashbook`)
+      }
+      const savedSummary = successfulIndices.length > 0
+        ? `${successfulIndices.length} bill${successfulIndices.length === 1 ? '' : 's'} saved${outcomeParts.length ? `. ${outcomeParts.join(', ')}` : ''}.`
+        : ''
+
       // Check if any bills failed
       if (failedImportsMap.size > 0) {
-        const successCount = successfulIndices.length
-        if (successCount > 0) {
-          setError(`${successCount} bills saved successfully, ${failedImportsMap.size} bills failed to import. Check the highlighted bills below.`)
+        if (savedSummary) {
+          setNotice(savedSummary)
+        }
+        if (successfulIndices.length > 0) {
+          setError(`${failedImportsMap.size} bill${failedImportsMap.size === 1 ? '' : 's'} failed to import. Check the highlighted bills below.`)
         } else {
           setError(`All ${failedImportsMap.size} selected bills failed to import. Check the highlighted bills below.`)
         }
@@ -358,6 +406,7 @@ export default function ElectricityBillsPage() {
         setFailedFiles([])
         setShowUploadForm(false)
         setError('')
+        setNotice(savedSummary)
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save bills')
@@ -378,6 +427,7 @@ export default function ElectricityBillsPage() {
     setFailedFiles([])
     setShowUploadForm(false)
     setError('')
+    setNotice('')
     setUploadProgress(null)
     setSaveProgress(null)
   }
@@ -428,7 +478,7 @@ export default function ElectricityBillsPage() {
       return
     }
 
-    if (!confirm(`Are you sure you want to delete ${selectedBills.size} selected bill(s)? This action cannot be undone.`)) {
+    if (!confirm(`Delete ${selectedBills.size} selected bill(s)? The cashbook expense for each bill is kept.`)) {
       return
     }
 
@@ -458,16 +508,8 @@ export default function ElectricityBillsPage() {
     }
   }
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-AU')
-  }
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-AU', {
-      style: 'currency',
-      currency: 'AUD'
-    }).format(amount)
-  }
+  const formatDate = (dateString: string) => formatDisplayDate(dateString)
+  const formatCurrency = (amount: number) => formatMoney(amount)
 
   const calculateDaysInRange = (startDate: string, endDate: string) => {
     const start = new Date(startDate)
@@ -478,605 +520,331 @@ export default function ElectricityBillsPage() {
   }
 
   if (authLoading) {
-    return <div>Loading...</div>
+    return (
+      <AppShell>
+        <EmptyState title="Loading bills" />
+      </AppShell>
+    )
   }
 
   if (!session) {
-    return <div>Please log in to access this page.</div>
+    return (
+      <AppShell>
+        <EmptyState
+          title="Sign in to view electricity bills"
+          action={<Link href="/login" className="text-sm font-medium text-green-800 underline">Sign in</Link>}
+        />
+      </AppShell>
+    )
   }
 
   return (
-    <div>
-      <Header />
-      <DashboardShell>
-        <div style={{ padding: '2rem' }}>
-          <h1 style={{ fontSize: '2rem', fontWeight: 'bold', marginBottom: '2rem' }}>
-            Electricity Bills
-          </h1>
+    <AppShell>
+      <PageFrame
+        title="Electricity bills"
+        description="Upload a Synergy PDF to record the bill and post the expense. Saving a bill that is already paid links the existing expense."
+      >
 
-          {error && (
-            <div style={{
-              padding: '1rem',
-              backgroundColor: '#fee2e2',
-              color: '#dc2626',
-              borderRadius: '0.5rem',
-              marginBottom: '1rem'
-            }}>
-              {error}
-            </div>
-          )}
+          {notice ? <Alert tone="success">{notice}</Alert> : null}
+          {error ? <Alert tone="error">{error}</Alert> : null}
 
           {isAdmin && (
-            <div style={{ marginBottom: '2rem' }}>
-              <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>
-                Upload Electricity Bills
-              </h2>
+            <div className="mb-8 space-y-4">
+              <h2 className="text-lg font-semibold text-gray-900">Upload bills</h2>
               
               {!showUploadForm ? (
                 <div>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    multiple
-                    accept=".pdf"
-                    onChange={handleFileUpload}
-                    style={{ marginBottom: '1rem' }}
-                  />
-                  <p style={{ fontSize: '0.875rem', color: '#6b7280' }}>
-                    Select one or more PDF electricity bills to upload and parse
-                  </p>
+                  <label
+                    className="flex cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-gray-300 bg-white px-6 py-10 text-center hover:border-green-700"
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={(event) => {
+                      event.preventDefault()
+                      if (event.dataTransfer.files.length > 0) handleDroppedFiles(event.dataTransfer.files)
+                    }}
+                  >
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      multiple
+                      accept=".pdf,application/pdf"
+                      onChange={handleFileUpload}
+                      className="sr-only"
+                    />
+                    <span className="font-medium text-gray-900">Drop PDF bills here, or click to choose</span>
+                    <span className="mt-1 max-w-xl text-sm text-gray-600">
+                      Saving a bill records it here and posts the expense, split across the parties for that account.
+                    </span>
+                  </label>
                   
                   {/* Progress Indicator */}
                   {uploadProgress && (
-                    <div style={{
-                      marginTop: '1rem',
-                      padding: '1rem',
-                      backgroundColor: '#f0f9ff',
-                      border: '1px solid #0ea5e9',
-                      borderRadius: '0.5rem'
-                    }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                        <span style={{ fontWeight: '500', color: '#0c4a6e' }}>
-                          Processing files...
-                        </span>
-                        <span style={{ fontSize: '0.875rem', color: '#0369a1' }}>
-                          {uploadProgress.current} of {uploadProgress.total}
-                        </span>
+                    <div className="mt-4 rounded-lg border border-gray-200 bg-white p-4">
+                      <div className="mb-2 flex items-center justify-between text-sm">
+                        <span className="font-medium text-gray-900">Reading files</span>
+                        <span className="text-gray-500">{uploadProgress.current} of {uploadProgress.total}</span>
                       </div>
-                      <div style={{
-                        width: '100%',
-                        height: '8px',
-                        backgroundColor: '#e0f2fe',
-                        borderRadius: '4px',
-                        overflow: 'hidden'
-                      }}>
-                        <div style={{
-                          width: `${(uploadProgress.current / uploadProgress.total) * 100}%`,
-                          height: '100%',
-                          backgroundColor: '#0ea5e9',
-                          transition: 'width 0.3s ease'
-                        }} />
+                      <div className="h-2 overflow-hidden rounded-full bg-gray-100">
+                        <div
+                          className="h-full bg-primary transition-[width] duration-300"
+                          style={{ width: `${(uploadProgress.current / uploadProgress.total) * 100}%` }}
+                        />
                       </div>
-                      <div style={{ marginTop: '0.5rem', fontSize: '0.875rem', color: '#0369a1' }}>
-                        Current: {uploadProgress.currentFile}
-                      </div>
+                      <p className="mt-2 text-sm text-gray-600">{uploadProgress.currentFile}</p>
                     </div>
                   )}
                 </div>
               ) : (
-                <div style={{
-                  border: '1px solid #d1d5db',
-                  borderRadius: '0.5rem',
-                  padding: '1rem',
-                  backgroundColor: '#f9fafb'
-                }}>
-                  {/* Import Summary */}
-                  <div style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    marginBottom: '1rem',
-                    padding: '0.75rem',
-                    backgroundColor: 'white',
-                    borderRadius: '0.375rem',
-                    border: '1px solid #e5e7eb'
-                  }}>
-                    <div style={{ display: 'flex', gap: '2rem', alignItems: 'center' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <span style={{ fontSize: '1.125rem', fontWeight: 'bold', color: '#16a34a' }}>
-                          ✓ {parsingResults.length} Parsed
-                        </span>
-                      </div>
-                      {failedFiles.length > 0 && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                          <span style={{ fontSize: '1.125rem', fontWeight: 'bold', color: '#dc2626' }}>
-                            ✗ {failedFiles.length} Failed
-                          </span>
-                        </div>
-                      )}
+                <div className="space-y-4 rounded-lg border border-gray-200 bg-gray-50 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm">
+                    <div className="flex flex-wrap items-center gap-4">
+                      <span className="font-medium text-gray-900">{parsingResults.length} parsed</span>
+                      {failedFiles.length > 0 ? (
+                        <span className="font-medium text-red-700">{failedFiles.length} failed</span>
+                      ) : null}
                     </div>
-                    <div style={{ fontSize: '0.875rem', color: '#6b7280' }}>
-                      Total files: {parsingResults.length + failedFiles.length}
-                    </div>
+                    <span className="text-gray-500">{parsingResults.length + failedFiles.length} files</span>
                   </div>
 
-                  <h3 style={{ fontSize: '1.25rem', fontWeight: 'bold', marginBottom: '1rem' }}>
-                    Parsed Bills ({parsingResults.length})
-                  </h3>
-                  
-                  {/* Selection Controls */}
-                  <div style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    padding: '0.75rem',
-                    backgroundColor: 'white',
-                    borderRadius: '0.375rem',
-                    border: '1px solid #e5e7eb',
-                    marginBottom: '1rem'
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
-                        <input
-                          type="checkbox"
-                          checked={selectedParsedBills.size === parsingResults.length && parsingResults.length > 0}
-                          onChange={handleSelectAllParsedBills}
-                          style={{ cursor: 'pointer' }}
-                        />
-                        <span style={{ fontSize: '0.875rem', fontWeight: '500' }}>
-                          {selectedParsedBills.size === parsingResults.length && parsingResults.length > 0 ? 'Deselect All' : 'Select All'}
-                        </span>
-                      </label>
-                      <span style={{ fontSize: '0.875rem', color: '#6b7280' }}>
-                        {selectedParsedBills.size > 0 ? `${selectedParsedBills.size} of ${parsingResults.length} selected` : `${parsingResults.length} bills total`}
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <h3 className="text-base font-semibold text-gray-900">Parsed bills ({parsingResults.length})</h3>
+                    <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={selectedParsedBills.size === parsingResults.length && parsingResults.length > 0}
+                        onChange={handleSelectAllParsedBills}
+                      />
+                      {selectedParsedBills.size === parsingResults.length && parsingResults.length > 0 ? "Deselect all" : "Select all"}
+                      <span className="text-gray-500">
+                        {selectedParsedBills.size > 0 ? `${selectedParsedBills.size} selected` : `${parsingResults.length} bills`}
                       </span>
-                    </div>
+                    </label>
                   </div>
                   
-                  {parsingResults.map((bill, index) => (
-                    <div key={index} style={{
-                      border: failedImports.has(index) ? '2px solid #dc2626' : '1px solid #e5e7eb',
-                      borderRadius: '0.375rem',
-                      padding: '1rem',
-                      marginBottom: '1rem',
-                      backgroundColor: failedImports.has(index) ? '#fef2f2' : 'white',
-                      position: 'relative'
-                    }}>
-                      {failedImports.has(index) && (
-                        <div style={{
-                          position: 'absolute',
-                          top: '-10px',
-                          left: '10px',
-                          backgroundColor: '#dc2626',
-                          color: 'white',
-                          padding: '0.25rem 0.5rem',
-                          borderRadius: '0.25rem',
-                          fontSize: '0.75rem',
-                          fontWeight: 'bold',
-                          maxWidth: '300px',
-                          wordWrap: 'break-word'
-                        }}>
-                          IMPORT FAILED: {failedImports.get(index)}
-                        </div>
-                      )}
-                      {/* Bill Selection Checkbox */}
-                      <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.5rem',
-                        marginBottom: '1rem',
-                        padding: '0.5rem',
-                        backgroundColor: failedImports.has(index) ? '#fee2e2' : '#f9fafb',
-                        borderRadius: '0.25rem',
-                        border: failedImports.has(index) ? '1px solid #fecaca' : 'none'
-                      }}>
-                        <input
-                          type="checkbox"
-                          checked={selectedParsedBills.has(index)}
-                          onChange={(e) => handleSelectParsedBill(index, e.target.checked)}
-                          style={{ cursor: 'pointer' }}
-                        />
-                        <span style={{ 
-                          fontSize: '0.875rem', 
-                          fontWeight: '500', 
-                          color: failedImports.has(index) ? '#dc2626' : '#374151' 
-                        }}>
-                          {failedImports.has(index) ? 'Retry this bill for import' : 'Select this bill for import'}
-                        </span>
-                      </div>
-                      
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
-                        <div>
-                          <strong>Account Number:</strong> {bill.accountNumber}
-                        </div>
-                        <div>
-                          <strong>Bill Date:</strong> {formatDate(bill.billDate)}
-                        </div>
-                        <div>
-                          <strong>Date Range:</strong> {formatDate(bill.billDateRangeStart)} - {formatDate(bill.billDateRangeEnd)}
-                        </div>
-                        <div>
-                          <strong>Units Consumed:</strong> {bill.totalUnitsConsumed.toFixed(2)} kWh
-                        </div>
-                        <div>
-                          <strong>Units per Day:</strong> {bill.unitsPerDay.toFixed(4)} kWh
-                        </div>
-                        <div>
-                          <strong>Reading Type:</strong> {bill.isEstimated ? 'Estimated' : 'Actual'}
-                        </div>
-                        <div>
-                          <strong>Meter Reading:</strong> {bill.meterReading > 0 ? bill.meterReading.toFixed(2) : 'Not available'}
-                        </div>
-                        <div>
-                          <strong>Bill Amount:</strong> {formatCurrency(bill.billAmount)}
-                        </div>
-                        <div>
-                          <strong>Source File:</strong>{' '}
-                          <a
-                            href={bill.fileUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            style={{
-                              color: '#3b82f6',
-                              textDecoration: 'underline',
-                              cursor: 'pointer'
-                            }}
-                          >
-                            {bill.fileName}
-                          </a>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                  <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+                    <table className="w-full min-w-[48rem] text-sm">
+                      <thead className="bg-gray-50 text-left">
+                        <tr>
+                          <th className="px-3 py-2"></th>
+                          <th className="px-3 py-2 font-medium">Account</th>
+                          <th className="px-3 py-2 font-medium">Bill date</th>
+                          <th className="px-3 py-2 font-medium">Range</th>
+                          <th className="px-3 py-2 text-right font-medium">kWh</th>
+                          <th className="px-3 py-2 font-medium">Reading</th>
+                          <th className="px-3 py-2 text-right font-medium">Amount</th>
+                          <th className="px-3 py-2 font-medium">File</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {parsingResults.map((bill, index) => (
+                          <tr key={index} className={failedImports.has(index) ? "border-t bg-red-50" : "border-t"}>
+                            <td className="px-3 py-2">
+                              <input
+                                type="checkbox"
+                                aria-label={failedImports.has(index) ? "Retry this bill" : "Select this bill"}
+                                checked={selectedParsedBills.has(index)}
+                                onChange={(e) => handleSelectParsedBill(index, e.target.checked)}
+                              />
+                            </td>
+                            <td className="px-3 py-2">
+                              {bill.accountNumber}
+                              {failedImports.has(index) ? (
+                                <div className="mt-1 text-xs text-red-700">Import failed: {failedImports.get(index)}</div>
+                              ) : null}
+                            </td>
+                            <td className="px-3 py-2">{formatDate(bill.billDate)}</td>
+                            <td className="px-3 py-2">{formatDate(bill.billDateRangeStart)} – {formatDate(bill.billDateRangeEnd)}</td>
+                            <td className="px-3 py-2 text-right tabular-nums">{bill.totalUnitsConsumed.toFixed(2)}</td>
+                            <td className="px-3 py-2">{bill.isEstimated ? "Estimated" : "Actual"}</td>
+                            <td className="px-3 py-2 text-right tabular-nums">{formatCurrency(bill.billAmount)}</td>
+                            <td className="px-3 py-2">
+                              <a href={bill.fileUrl} target="_blank" rel="noopener noreferrer" className="text-green-800 underline-offset-2 hover:underline">
+                                {bill.fileName}
+                              </a>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                   
                   {/* Failed Files Section */}
                   {failedFiles.length > 0 && (
-                    <div style={{
-                      border: '1px solid #fecaca',
-                      borderRadius: '0.5rem',
-                      padding: '1rem',
-                      backgroundColor: '#fef2f2',
-                      marginTop: '1rem'
-                    }}>
-                      <h4 style={{ fontSize: '1.125rem', fontWeight: 'bold', marginBottom: '1rem', color: '#dc2626' }}>
-                        Failed Files ({failedFiles.length})
-                      </h4>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    <div className="rounded-lg border border-red-200 bg-red-50 p-4">
+                      <h4 className="mb-3 text-sm font-semibold text-red-800">Could not read {failedFiles.length} {failedFiles.length === 1 ? "file" : "files"}</h4>
+                      <div className="space-y-2">
                         {failedFiles.map((failure, index) => (
-                          <div key={index} style={{
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            padding: '0.75rem',
-                            backgroundColor: 'white',
-                            borderRadius: '0.375rem',
-                            border: '1px solid #fecaca'
-                          }}>
-                            <span style={{ fontWeight: '500', color: '#374151' }}>
-                              {failure.fileName}
-                            </span>
-                            <span style={{ color: '#dc2626', fontSize: '0.875rem' }}>
-                              {failure.error}
-                            </span>
+                          <div key={index} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-red-200 bg-white px-3 py-2 text-sm">
+                            <span className="font-medium text-gray-900">{failure.fileName}</span>
+                            <span className="text-red-700">{failure.error}</span>
                           </div>
                         ))}
                       </div>
                     </div>
                   )}
-                  
-                  {/* Save Progress Indicator */}
+
                   {saveProgress && (
-                    <div style={{
-                      marginTop: '1rem',
-                      padding: '1rem',
-                      backgroundColor: '#f0fdf4',
-                      border: '1px solid #16a34a',
-                      borderRadius: '0.5rem'
-                    }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                        <span style={{ fontWeight: '500', color: '#166534' }}>
-                          Saving bills...
-                        </span>
-                        <span style={{ fontSize: '0.875rem', color: '#15803d' }}>
-                          {saveProgress.current} of {saveProgress.total}
-                        </span>
+                    <div className="rounded-lg border border-gray-200 bg-white p-4">
+                      <div className="mb-2 flex items-center justify-between text-sm">
+                        <span className="font-medium text-gray-900">Saving bills</span>
+                        <span className="text-gray-500">{saveProgress.current} of {saveProgress.total}</span>
                       </div>
-                      <div style={{
-                        width: '100%',
-                        height: '8px',
-                        backgroundColor: '#dcfce7',
-                        borderRadius: '4px',
-                        overflow: 'hidden'
-                      }}>
-                        <div style={{
-                          width: `${(saveProgress.current / saveProgress.total) * 100}%`,
-                          height: '100%',
-                          backgroundColor: '#16a34a',
-                          transition: 'width 0.3s ease'
-                        }} />
+                      <div className="h-2 overflow-hidden rounded-full bg-gray-100">
+                        <div
+                          className="h-full bg-primary transition-[width] duration-300"
+                          style={{ width: `${(saveProgress.current / saveProgress.total) * 100}%` }}
+                        />
                       </div>
-                      <div style={{ marginTop: '0.5rem', fontSize: '0.875rem', color: '#15803d' }}>
-                        Current: {saveProgress.currentFile}
-                      </div>
+                      <p className="mt-2 text-sm text-gray-600">{saveProgress.currentFile}</p>
                     </div>
                   )}
-                  
-                  <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
-                    <button
-                      onClick={handleSaveBills}
-                      disabled={uploading || selectedParsedBills.size === 0}
-                      style={{
-                        padding: '0.75rem 1.5rem',
-                        backgroundColor: '#16a34a',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '0.375rem',
-                        cursor: (uploading || selectedParsedBills.size === 0) ? 'not-allowed' : 'pointer',
-                        opacity: (uploading || selectedParsedBills.size === 0) ? 0.6 : 1
-                      }}
-                    >
-                      {uploading ? 'Saving...' : `Save ${selectedParsedBills.size} Selected Bills`}
-                    </button>
-                    <button
-                      onClick={handleCancelUpload}
-                      style={{
-                        padding: '0.75rem 1.5rem',
-                        backgroundColor: '#6b7280',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '0.375rem',
-                        cursor: 'pointer'
-                      }}
-                    >
+
+                  <div className="flex flex-wrap gap-3">
+                    <Button type="button" onClick={handleSaveBills} disabled={uploading || selectedParsedBills.size === 0}>
+                      {uploading ? "Saving..." : `Save ${selectedParsedBills.size} selected`}
+                    </Button>
+                    <Button type="button" variant="outline" onClick={handleCancelUpload}>
                       Cancel
-                    </button>
+                    </Button>
                   </div>
                 </div>
               )}
             </div>
           )}
 
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+          <div className="space-y-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
               <div>
-                <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold', margin: 0 }}>
-                  Electricity Bills History
-                </h2>
-                {!loading && bills.length > 0 && selectedAccountNumber && (
-                  <p style={{ fontSize: '0.875rem', color: '#6b7280', margin: '0.25rem 0 0 0' }}>
-                    Showing {filteredBills.length} bills for {getAccountNumbersWithParties().find(a => a.accountNumber === selectedAccountNumber)?.partyName} ({selectedAccountNumber})
+                <h2 className="text-lg font-semibold text-gray-900">Bill history</h2>
+                {!loading && bills.length > 0 && (
+                  <p className="mt-1 text-sm text-gray-500">
+                    {selectedAccountNumber
+                      ? `Showing ${filteredBills.length} bills for ${getAccountNumbersWithParties().find(a => a.accountNumber === selectedAccountNumber)?.partyName} (${selectedAccountNumber})`
+                      : `Showing ${filteredBills.length} bills`}
                   </p>
                 )}
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                {/* Account Number Filter */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <span style={{ fontSize: '0.875rem', color: '#6b7280' }}>Filter by account:</span>
+              <div className="flex flex-wrap items-end gap-3">
+                <label className="flex flex-col gap-1 text-sm text-gray-700">
+                  Account
                   <select
                     value={selectedAccountNumber}
                     onChange={(e) => setSelectedAccountNumber(e.target.value)}
-                    style={{
-                      padding: '0.5rem',
-                      border: '1px solid #d1d5db',
-                      borderRadius: '0.375rem',
-                      fontSize: '0.875rem',
-                      backgroundColor: 'white',
-                      cursor: 'pointer',
-                      minWidth: '200px'
-                    }}
+                    className={fieldControlClass}
                   >
-                    <option value="">Select an account...</option>
+                    <option value="">All accounts</option>
                     {getAccountNumbersWithParties().map(({ accountNumber, partyName }) => (
                       <option key={accountNumber} value={accountNumber}>
                         {partyName} ({accountNumber})
                       </option>
                     ))}
                   </select>
-                </div>
-                
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <span style={{ fontSize: '0.875rem', color: '#6b7280' }}>Sort by date range:</span>
-                  <button
-                    onClick={() => setSortAscending(!sortAscending)}
-                    style={{
-                      padding: '0.5rem 1rem',
-                      backgroundColor: '#3b82f6',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '0.375rem',
-                      cursor: 'pointer',
-                      fontSize: '0.875rem',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.25rem'
-                    }}
-                  >
-                    {sortAscending ? '↑ Oldest First' : '↓ Newest First'}
-                  </button>
-                </div>
+                </label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setSortAscending(!sortAscending)}
+                  aria-label={sortAscending ? "Showing oldest first. Show newest first." : "Showing newest first. Show oldest first."}
+                >
+                  {sortAscending ? "Oldest first" : "Newest first"}
+                </Button>
               </div>
             </div>
-            
+
             {loading ? (
-              <div>Loading bills...</div>
+              <p className="text-sm text-gray-500">Loading bills...</p>
             ) : bills.length === 0 ? (
-              <div style={{ color: '#6b7280', fontStyle: 'italic' }}>
-                No electricity bills found
-              </div>
-            ) : !selectedAccountNumber ? (
-              <div style={{ 
-                color: '#6b7280', 
-                fontStyle: 'italic',
-                textAlign: 'center',
-                padding: '2rem',
-                backgroundColor: '#f9fafb',
-                borderRadius: '0.5rem',
-                border: '1px solid #e5e7eb'
-              }}>
-                Please select an account number to view electricity bills
-              </div>
+              <EmptyState title="No electricity bills yet" description="Upload a bill above and it will appear here." />
             ) : filteredBills.length === 0 ? (
-              <div style={{ color: '#6b7280', fontStyle: 'italic' }}>
-                No electricity bills found for the selected account number
-              </div>
+              <EmptyState title="No bills for this account" description="Choose another account, or show all accounts." />
             ) : (
               <>
                 {/* Bulk Actions Toolbar */}
                 {isAdmin && (
-                  <div style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    padding: '1rem',
-                    backgroundColor: '#f9fafb',
-                    border: '1px solid #e5e7eb',
-                    borderBottom: 'none',
-                    borderRadius: '0.5rem 0.5rem 0 0'
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-t-lg border border-b-0 border-gray-200 bg-gray-50 px-4 py-3">
+                    <div className="flex items-center gap-4">
+                      <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-gray-700">
                         <input
                           type="checkbox"
                           checked={selectedBills.size === paginatedBills.length && paginatedBills.length > 0}
                           onChange={handleSelectAll}
-                          style={{ cursor: 'pointer' }}
                         />
-                        <span style={{ fontSize: '0.875rem', fontWeight: '500' }}>
-                          {selectedBills.size === paginatedBills.length && paginatedBills.length > 0 ? 'Deselect All' : 'Select All'}
-                        </span>
+                        {selectedBills.size === paginatedBills.length && paginatedBills.length > 0 ? "Deselect page" : "Select page"}
                       </label>
-                      <span style={{ fontSize: '0.875rem', color: '#6b7280' }}>
-                        {selectedBills.size > 0 ? `${selectedBills.size} of ${filteredBills.length} selected` : `${filteredBills.length} bills total`}
+                      <span className="text-sm text-gray-500">
+                        {selectedBills.size > 0 ? `${selectedBills.size} of ${filteredBills.length} selected` : `${filteredBills.length} bills`}
                       </span>
                     </div>
                     {selectedBills.size > 0 && (
-                      <button
-                        onClick={handleDeleteSelected}
-                        disabled={loading}
-                        style={{
-                          padding: '0.5rem 1rem',
-                          backgroundColor: '#ef4444',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '0.375rem',
-                          cursor: loading ? 'not-allowed' : 'pointer',
-                          fontSize: '0.875rem',
-                          opacity: loading ? 0.6 : 1
-                        }}
-                      >
-                        Delete Selected ({selectedBills.size})
-                      </button>
+                      <Button type="button" variant="destructive" size="sm" onClick={handleDeleteSelected} disabled={loading}>
+                        Delete selected ({selectedBills.size})
+                      </Button>
                     )}
                   </div>
                 )}
-                <div style={{
-                border: '1px solid #e5e7eb',
-                borderRadius: '0.5rem',
-                overflow: 'hidden'
-              }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead style={{ backgroundColor: '#f9fafb' }}>
-                    <tr>
+                <div className={`max-h-[70vh] overflow-auto border border-gray-200 ${isAdmin ? "rounded-none" : "rounded-t-lg"}`}>
+                <table className="min-w-full text-sm">
+                  <thead className="sticky top-0 z-10 bg-white">
+                    <tr className="border-b text-left text-xs font-medium text-gray-500">
                       {isAdmin && (
-                        <th style={{ padding: '1rem', textAlign: 'center', borderBottom: '1px solid #e5e7eb', width: '50px' }}>
+                        <th className="w-10 px-3 py-2 text-center">
                           <input
                             type="checkbox"
-                            checked={selectedBills.size === bills.length && bills.length > 0}
+                            checked={selectedBills.size === paginatedBills.length && paginatedBills.length > 0}
                             onChange={handleSelectAll}
-                            style={{ cursor: 'pointer' }}
+                            aria-label="Select bills on this page"
                           />
                         </th>
                       )}
-                      <th style={{ padding: '1rem', textAlign: 'left', borderBottom: '1px solid #e5e7eb' }}>
-                        Account
-                      </th>
-                      <th style={{ padding: '1rem', textAlign: 'left', borderBottom: '1px solid #e5e7eb' }}>
-                        Bill Date
-                      </th>
-                      <th style={{ padding: '1rem', textAlign: 'left', borderBottom: '1px solid #e5e7eb' }}>
-                        Date Range
-                      </th>
-                      <th style={{ padding: '1rem', textAlign: 'center', borderBottom: '1px solid #e5e7eb' }}>
-                        Days
-                      </th>
-                      <th style={{ padding: '1rem', textAlign: 'right', borderBottom: '1px solid #e5e7eb' }}>
-                        Units (kWh)
-                      </th>
-                      <th style={{ padding: '1rem', textAlign: 'right', borderBottom: '1px solid #e5e7eb' }}>
-                        Meter Reading
-                      </th>
-                      <th style={{ padding: '1rem', textAlign: 'right', borderBottom: '1px solid #e5e7eb' }}>
-                        Units/Day
-                      </th>
-                      <th style={{ padding: '1rem', textAlign: 'center', borderBottom: '1px solid #e5e7eb' }}>
-                        Estimated
-                      </th>
-                      <th style={{ padding: '1rem', textAlign: 'right', borderBottom: '1px solid #e5e7eb' }}>
-                        Amount
-                      </th>
+                      <th className="sticky left-0 z-20 bg-white px-3 py-2">Account</th>
+                      <th className="px-3 py-2">Bill date</th>
+                      <th className="px-3 py-2">Date range</th>
+                      <th className="px-3 py-2 text-right">Days</th>
+                      <th className="px-3 py-2 text-right">Units (kWh)</th>
+                      <th className="px-3 py-2 text-right">Meter</th>
+                      <th className="px-3 py-2 text-right">Units/day</th>
+                      <th className="px-3 py-2">Reading</th>
+                      <th className="px-3 py-2 text-right">Amount</th>
+                      <th className="px-3 py-2">Expense</th>
                     </tr>
                   </thead>
                   <tbody>
                     {paginatedBills.map((bill) => (
-                      <tr key={bill.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                      <tr key={bill.id} className="group border-b border-gray-100 hover:bg-gray-50">
                         {isAdmin && (
-                          <td style={{ padding: '1rem', textAlign: 'center', borderBottom: '1px solid #f3f4f6' }}>
+                          <td className="px-3 py-2 text-center">
                             <input
                               type="checkbox"
                               checked={selectedBills.has(bill.id)}
                               onChange={(e) => handleSelectBill(bill.id, e.target.checked)}
-                              style={{ cursor: 'pointer' }}
+                              aria-label={`Select bill ${bill.account_number} ${formatDate(bill.bill_date)}`}
                             />
                           </td>
                         )}
-                        <td style={{ padding: '1rem', borderBottom: '1px solid #f3f4f6' }}>
-                          {bill.account_number}
+                        <td className="sticky left-0 bg-white px-3 py-2 font-medium text-gray-900 group-hover:bg-gray-50">{bill.account_number}</td>
+                        <td className="whitespace-nowrap px-3 py-2">{formatDate(bill.bill_date)}</td>
+                        <td className="whitespace-nowrap px-3 py-2">
+                          {formatDate(bill.bill_date_range_start)} – {formatDate(bill.bill_date_range_end)}
                         </td>
-                        <td style={{ padding: '1rem', borderBottom: '1px solid #f3f4f6' }}>
-                          {formatDate(bill.bill_date)}
-                        </td>
-                        <td style={{ padding: '1rem', borderBottom: '1px solid #f3f4f6' }}>
-                          {formatDate(bill.bill_date_range_start)} - {formatDate(bill.bill_date_range_end)}
-                        </td>
-                        <td style={{ padding: '1rem', textAlign: 'center', borderBottom: '1px solid #f3f4f6' }}>
+                        <td className="px-3 py-2 text-right tabular-nums">
                           {calculateDaysInRange(bill.bill_date_range_start, bill.bill_date_range_end)}
                         </td>
-                        <td style={{ padding: '1rem', textAlign: 'right', borderBottom: '1px solid #f3f4f6' }}>
-                          {bill.total_units_consumed.toFixed(2)}
+                        <td className="px-3 py-2 text-right tabular-nums">{bill.total_units_consumed.toFixed(2)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{bill.meter_reading ? bill.meter_reading.toFixed(2) : "—"}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{bill.units_per_day ? bill.units_per_day.toFixed(4) : "—"}</td>
+                        <td className="px-3 py-2">
+                          <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${bill.is_estimated ? "bg-amber-50 text-amber-800" : "bg-gray-100 text-gray-700"}`}>
+                            {bill.is_estimated ? "Estimated" : "Actual"}
+                          </span>
                         </td>
-                        <td style={{ padding: '1rem', textAlign: 'right', borderBottom: '1px solid #f3f4f6' }}>
-                          {bill.meter_reading ? bill.meter_reading.toFixed(2) : '-'}
-                        </td>
-                        <td style={{ padding: '1rem', textAlign: 'right', borderBottom: '1px solid #f3f4f6' }}>
-                          {bill.units_per_day ? bill.units_per_day.toFixed(4) : '-'}
-                        </td>
-                        <td style={{ padding: '1rem', textAlign: 'center', borderBottom: '1px solid #f3f4f6' }}>
-                          {bill.is_estimated ? (
-                            <span style={{
-                              backgroundColor: '#fef3c7',
-                              color: '#92400e',
-                              padding: '0.25rem 0.5rem',
-                              borderRadius: '0.25rem',
-                              fontSize: '0.75rem',
-                              fontWeight: '500'
-                            }}>
-                              Estimated
-                            </span>
+                        <td className="px-3 py-2 text-right tabular-nums">{formatCurrency(bill.bill_amount)}</td>
+                        <td className="px-3 py-2">
+                          {bill.expense_id ? (
+                            <Link href={`/edit-expense/${bill.expense_id}`} className="font-medium text-green-800 hover:underline">
+                              Recorded
+                            </Link>
                           ) : (
-                            <span style={{
-                              backgroundColor: '#d1fae5',
-                              color: '#065f46',
-                              padding: '0.25rem 0.5rem',
-                              borderRadius: '0.25rem',
-                              fontSize: '0.75rem',
-                              fontWeight: '500'
-                            }}>
-                              Actual
-                            </span>
+                            "—"
                           )}
-                        </td>
-                        <td style={{ padding: '1rem', textAlign: 'right', borderBottom: '1px solid #f3f4f6' }}>
-                          {formatCurrency(bill.bill_amount)}
                         </td>
                       </tr>
                     ))}
@@ -1086,33 +854,16 @@ export default function ElectricityBillsPage() {
               
               {/* Pagination Controls */}
               {filteredBills.length > 0 && (
-                <div style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  padding: '1rem',
-                  backgroundColor: '#f9fafb',
-                  border: '1px solid #e5e7eb',
-                  borderTop: 'none',
-                  borderRadius: '0 0 0.5rem 0.5rem'
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                    <span style={{ fontSize: '0.875rem', color: '#6b7280' }}>
-                      Rows per page:
-                    </span>
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-b-lg border border-t-0 border-gray-200 bg-gray-50 px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray-500">Rows per page</span>
                     <select
                       value={rowsPerPage}
                       onChange={(e) => {
                         setRowsPerPage(Number(e.target.value))
                         setCurrentPage(1)
                       }}
-                      style={{
-                        padding: '0.25rem 0.5rem',
-                        border: '1px solid #d1d5db',
-                        borderRadius: '0.25rem',
-                        fontSize: '0.875rem',
-                        backgroundColor: 'white'
-                      }}
+                      className="rounded border border-gray-300 bg-white px-2 py-1 text-sm"
                     >
                       <option value={5}>5</option>
                       <option value={10}>10</option>
@@ -1120,51 +871,23 @@ export default function ElectricityBillsPage() {
                       <option value={50}>50</option>
                     </select>
                   </div>
-                  
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <span style={{ fontSize: '0.875rem', color: '#6b7280' }}>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray-500">
                       {startIndex + 1}-{Math.min(endIndex, filteredBills.length)} of {filteredBills.length}
                     </span>
-                    
-                    <button
-                      onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-                      disabled={currentPage === 1}
-                      style={{
-                        padding: '0.25rem 0.5rem',
-                        border: '1px solid #d1d5db',
-                        borderRadius: '0.25rem',
-                        backgroundColor: currentPage === 1 ? '#f3f4f6' : 'white',
-                        color: currentPage === 1 ? '#9ca3af' : '#374151',
-                        cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
-                        fontSize: '0.875rem'
-                      }}
-                    >
+                    <Button type="button" variant="outline" size="sm" onClick={() => setCurrentPage(Math.max(1, currentPage - 1))} disabled={currentPage === 1}>
                       Previous
-                    </button>
-                    
-                    <button
-                      onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-                      disabled={currentPage === totalPages}
-                      style={{
-                        padding: '0.25rem 0.5rem',
-                        border: '1px solid #d1d5db',
-                        borderRadius: '0.25rem',
-                        backgroundColor: currentPage === totalPages ? '#f3f4f6' : 'white',
-                        color: currentPage === totalPages ? '#9ca3af' : '#374151',
-                        cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
-                        fontSize: '0.875rem'
-                      }}
-                    >
+                    </Button>
+                    <Button type="button" variant="outline" size="sm" onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))} disabled={currentPage === totalPages}>
                       Next
-                    </button>
+                    </Button>
                   </div>
                 </div>
               )}
               </>
             )}
           </div>
-        </div>
-      </DashboardShell>
-    </div>
+      </PageFrame>
+    </AppShell>
   )
 }

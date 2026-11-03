@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
+import {
+  ElectricityBillSaveError,
+  expenseStatusMessage,
+  saveElectricityBillWithExpense,
+} from '@/lib/electricityBillExpense';
 
 export async function GET() {
   try {
@@ -96,40 +101,29 @@ export async function POST(request: Request) {
       }, { status: 400 });
     }
 
-    // Insert the electricity bill
-          const { data: newBill, error: insertError } = await supabase
-        .from('electricity_bills')
-        .insert({
-          bill_date: billDate,
-          bill_date_range_start: billDateRangeStart,
-          bill_date_range_end: billDateRangeEnd,
-          total_units_consumed: totalUnitsConsumed,
-          units_per_day: unitsPerDay,
-          is_estimated: isEstimated,
-          account_number: accountNumber,
-          bill_amount: billAmount,
-          meter_reading: meterReading
-        })
-        .select()
-        .single();
+    const result = await saveElectricityBillWithExpense(supabase, session.user.id, {
+      billDate,
+      billDateRangeStart,
+      billDateRangeEnd,
+      totalUnitsConsumed,
+      unitsPerDay,
+      isEstimated,
+      accountNumber,
+      billAmount,
+      meterReading,
+    });
 
-    if (insertError) {
-      console.error('Error inserting electricity bill:', insertError);
-      if (insertError.code === '23505') { // Unique constraint violation
-        return NextResponse.json({ 
-          error: 'A bill with this date range and account number already exists' 
-        }, { status: 400 });
-      }
-      return NextResponse.json({ error: 'Failed to create bill' }, { status: 500 });
-    }
-
-    return NextResponse.json({ 
-      success: true, 
-      bill: newBill,
-      message: 'Electricity bill created successfully' 
+    return NextResponse.json({
+      success: true,
+      bill: result.bill,
+      expenseStatus: result.expenseStatus,
+      message: expenseStatusMessage(result.expenseStatus),
     });
   } catch (error) {
     console.error('Request processing error:', error);
+    if (error instanceof ElectricityBillSaveError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
     return NextResponse.json({ error: 'Failed to process request' }, { status: 500 });
   }
 }

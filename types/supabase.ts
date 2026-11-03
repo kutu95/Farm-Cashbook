@@ -59,6 +59,7 @@ export interface Database {
           bill_amount: number
           meter_reading?: number | null
           pdf_file_path?: string | null
+          expense_id?: string | null
           created_at: string
           updated_at: string
         }
@@ -74,6 +75,7 @@ export interface Database {
           bill_amount: number
           meter_reading?: number | null
           pdf_file_path?: string | null
+          expense_id?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -89,6 +91,7 @@ export interface Database {
           bill_amount?: number
           meter_reading?: number | null
           pdf_file_path?: string | null
+          expense_id?: string | null
           created_at?: string
           updated_at?: string
         }

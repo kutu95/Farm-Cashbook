@@ -3,7 +3,10 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/context/AuthContext'
-import Header from '@/components/Header'
+import AppShell from '@/components/AppShell'
+import PageFrame from '@/components/PageFrame'
+import EmptyState from '@/components/EmptyState'
+import { Button } from '@/components/ui/button'
 import { Save, Eye, EyeOff, Plus, Trash2 } from 'lucide-react'
 
 interface Page {
@@ -153,7 +156,7 @@ export default function PublishingPage() {
 
         if (error) {
           console.error('Error updating page:', error)
-          setError('Error updating page')
+          setError(error.message ? `Error updating page: ${error.message}` : 'Error updating page')
           return
         }
       } else {
@@ -171,7 +174,7 @@ export default function PublishingPage() {
 
         if (error) {
           console.error('Error creating page:', error)
-          setError('Error creating page')
+          setError(error.message ? `Error creating page: ${error.message}` : 'Error creating page')
           return
         }
       }
@@ -228,36 +231,31 @@ export default function PublishingPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-background">
-        <div className="container mx-auto py-6">
-          <Header />
-          <div className="flex justify-center items-center p-8">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
-          </div>
-        </div>
-      </div>
+      <AppShell>
+        <EmptyState title="Loading pages" />
+      </AppShell>
     )
   }
 
   if (!isAdmin) {
-    return null
+    return (
+      <AppShell>
+        <EmptyState title="Admin access required" description="Only an admin can publish pages." />
+      </AppShell>
+    )
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="container mx-auto py-6">
-        <Header />
-        <div className="max-w-6xl mx-auto">
-          <div className="flex justify-between items-center mb-6">
-            <h1 className="text-3xl font-bold">Page Publishing</h1>
-            <button
-              onClick={handleCreateNew}
-              className="flex items-center bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
-            >
-              <Plus className="mr-2" size={16} />
-              New Page
-            </button>
-          </div>
+    <AppShell>
+      <PageFrame
+        title="Publishing"
+        actions={
+          <Button type="button" onClick={handleCreateNew}>
+            <Plus className="mr-2" size={16} />
+            New page
+          </Button>
+        }
+      >
 
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4">
@@ -414,20 +412,13 @@ export default function PublishingPage() {
                     </div>
 
                     <div className="flex gap-2 pt-4">
-                      <button
-                        onClick={handleSave}
-                        disabled={saving}
-                        className="flex items-center bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 disabled:opacity-50"
-                      >
+                      <Button type="button" onClick={handleSave} disabled={saving}>
                         <Save className="mr-2" size={16} />
-                        {saving ? 'Saving...' : 'Save Page'}
-                      </button>
-                      <button
-                        onClick={handleCancel}
-                        className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600"
-                      >
+                        {saving ? 'Saving...' : 'Save page'}
+                      </Button>
+                      <Button type="button" variant="outline" onClick={handleCancel}>
                         Cancel
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 </div>
@@ -440,8 +431,7 @@ export default function PublishingPage() {
               )}
             </div>
           </div>
-        </div>
-      </div>
-    </div>
+      </PageFrame>
+    </AppShell>
   )
 } 

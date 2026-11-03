@@ -2,13 +2,9 @@
 const nextConfig = {
   // basePath: Use /cashbook for subpath hosting
   // When you get a domain, set NEXT_PUBLIC_BASE_PATH='' and rebuild
-  // For books.landlife.au domain, use empty basePath
-  // Temporarily hardcoded to empty for domain hosting - change back to '/cashbook' for subpath
-  basePath: process.env.USE_DOMAIN === 'true' || process.env.NEXT_PUBLIC_BASE_PATH === ''
-    ? '' 
-    : (process.env.NEXT_PUBLIC_BASE_PATH !== undefined 
-        ? process.env.NEXT_PUBLIC_BASE_PATH 
-        : '/cashbook'),
+  // TEMPORARILY HARDCODED to empty for books.landlife.au domain hosting
+  // TODO: Change back to env var logic when switching back to subpath hosting
+  basePath: '',
   
   typescript: {
     // Temporarily ignore build errors caused by Deno Edge Functions

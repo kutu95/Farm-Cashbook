@@ -2,7 +2,11 @@
 
 import { useState, useEffect } from "react"
 import { useAuth } from "@/context/AuthContext"
-import Header from "@/components/Header"
+import AppShell from "@/components/AppShell"
+import PageFrame from "@/components/PageFrame"
+import EmptyState from "@/components/EmptyState"
+import Alert from "@/components/Alert"
+import { Button } from "@/components/ui/button"
 import { User } from "@supabase/supabase-js"
 import { useRouter } from "next/navigation"
 
@@ -261,12 +265,9 @@ export default function ProfilePage() {
   // Show loading state
   if (authLoading || loading) {
     return (
-      <div className="p-6">
-        <Header />
-        <div className="flex justify-center items-center min-h-[200px]">
-          <div className="text-gray-600">Loading profile...</div>
-        </div>
-      </div>
+      <AppShell>
+        <EmptyState title="Loading profile" />
+      </AppShell>
     )
   }
 
@@ -276,12 +277,10 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="p-6 max-w-2xl mx-auto">
-      <Header />
-      <h1 className="text-2xl font-bold mb-6">Profile Settings</h1>
-
-      {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">{error}</div>}
-      {message && <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">{message}</div>}
+    <AppShell>
+      <PageFrame title="Profile" width="3xl" description="Your name, role, and which party statements are emailed to you.">
+      {error ? <Alert tone="error">{error}</Alert> : null}
+      {message ? <Alert tone="success">{message}</Alert> : null}
 
       <div className="bg-white shadow rounded-lg p-6 mb-6">
         <div className="mb-6">
@@ -301,35 +300,28 @@ export default function ProfilePage() {
               type="text"
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-ring focus:border-primary"
               placeholder="Enter your full name"
             />
           </div>
 
-          <button
-            type="submit"
-            disabled={updating}
-            className={`w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-              updating ? "opacity-50 cursor-not-allowed" : ""
-            }`}
-          >
-            {updating ? "Updating..." : "Update Profile"}
-          </button>
+          <Button type="submit" disabled={updating} className="w-full">
+            {updating ? "Updating..." : "Update profile"}
+          </Button>
         </form>
       </div>
 
       <div className="bg-white shadow rounded-lg p-6">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-lg font-semibold">Monthly Statement Subscriptions</h2>
-          <button
+          <Button
+            type="button"
+            variant="outline"
             onClick={sendStatementsOnDemand}
             disabled={sendingStatements || subscribedParties.length === 0}
-            className={`bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 ${
-              (sendingStatements || subscribedParties.length === 0) ? "opacity-50 cursor-not-allowed" : ""
-            }`}
           >
-            {sendingStatements ? "Sending..." : "Send Statements Now"}
-          </button>
+            {sendingStatements ? "Sending..." : "Send statements now"}
+          </Button>
         </div>
         <p className="text-gray-600 mb-4">
           Select the parties you want to receive monthly statements for. You'll receive a single email at the end of each month containing statements for all selected parties.
@@ -353,6 +345,7 @@ export default function ProfilePage() {
           ))}
         </div>
       </div>
-    </div>
+      </PageFrame>
+    </AppShell>
   )
 } 
