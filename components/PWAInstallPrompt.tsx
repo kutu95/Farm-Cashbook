@@ -2,23 +2,52 @@
 
 import { useEffect, useState } from 'react'
 
+const DISMISS_KEY = 'farm-cashbook-pwa-install-dismissed'
+
+interface BeforeInstallPromptEvent extends Event {
+  prompt: () => Promise<void>
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>
+}
+
+function isInstalledApp() {
+  return (
+    window.matchMedia('(display-mode: standalone)').matches ||
+    (window.navigator as Navigator & { standalone?: boolean }).standalone === true
+  )
+}
+
+function wasDismissed() {
+  try {
+    return localStorage.getItem(DISMISS_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function rememberDismiss() {
+  try {
+    localStorage.setItem(DISMISS_KEY, '1')
+  } catch {
+    // Storage can be blocked in private mode. The banner still hides for this visit.
+  }
+}
+
 export default function PWAInstallPrompt() {
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null)
+  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null)
   const [showInstallPrompt, setShowInstallPrompt] = useState(false)
 
   useEffect(() => {
-    // Listen for the beforeinstallprompt event
     const handleBeforeInstallPrompt = (e: Event) => {
       e.preventDefault()
-      setDeferredPrompt(e)
+      if (isInstalledApp() || wasDismissed()) return
+      setDeferredPrompt(e as BeforeInstallPromptEvent)
       setShowInstallPrompt(true)
     }
 
-    // Listen for successful installation
     const handleAppInstalled = () => {
+      rememberDismiss()
       setShowInstallPrompt(false)
       setDeferredPrompt(null)
-      console.log('PWA was installed')
     }
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
@@ -33,16 +62,11 @@ export default function PWAInstallPrompt() {
   const handleInstallClick = async () => {
     if (!deferredPrompt) return
 
-    // Show the install prompt
     deferredPrompt.prompt()
-
-    // Wait for the user to respond to the prompt
     const { outcome } = await deferredPrompt.userChoice
 
-    if (outcome === 'accepted') {
-      console.log('User accepted the install prompt')
-    } else {
-      console.log('User dismissed the install prompt')
+    if (outcome === 'dismissed') {
+      rememberDismiss()
     }
 
     setDeferredPrompt(null)
@@ -50,6 +74,8 @@ export default function PWAInstallPrompt() {
   }
 
   const handleDismiss = () => {
+    rememberDismiss()
+    setDeferredPrompt(null)
     setShowInstallPrompt(false)
   }
 
@@ -112,4 +138,3 @@ export default function PWAInstallPrompt() {
     </div>
   )
 }
-
