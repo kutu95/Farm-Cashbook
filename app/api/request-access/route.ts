@@ -32,7 +32,7 @@ export async function POST(request: Request) {
     // Send email to admin
     try {
       const emailResponse = await resend.emails.send({
-        from: 'Farm Cashbook <statements@margies.app>',
+        from: 'Farm Cashbook <john@margies.app>',
         to: 'john@streamtime.com.au',
         subject: 'New Farm Cashbook Access Request',
         html: `

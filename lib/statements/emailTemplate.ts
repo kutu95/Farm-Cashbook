@@ -1,7 +1,7 @@
 export const STATEMENT_EMAIL_SLUG = "statement-email"
 
-export const LANDLIFE_FROM = "Landlife <statements@margies.app>"
-export const CASHBOOK_FROM = "Farm Cashbook <statements@margies.app>"
+export const LANDLIFE_FROM = "Landlife <john@margies.app>"
+export const CASHBOOK_FROM = "Farm Cashbook <john@margies.app>"
 
 function escapeHtml(value: string) {
   return value.replace(/[&<>"']/g, (character) => {

@@ -157,13 +157,13 @@ export async function POST(request: Request) {
     
     try {
       console.log('Attempting to send email via Resend with config:', {
-        from: 'Farm Cashbook <statements@margies.app>',
+        from: 'Farm Cashbook <john@margies.app>',
         to: email,
         subject: 'Invitation to Farm Cashbook'
       })
 
       const emailResult = await resend.emails.send({
-        from: 'Farm Cashbook <statements@margies.app>',
+        from: 'Farm Cashbook <john@margies.app>',
         to: email,
         subject: 'Invitation to Farm Cashbook',
         html: `

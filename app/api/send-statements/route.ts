@@ -76,7 +76,7 @@ export async function POST(request: Request) {
       
       try {
         const emailResponse = await resend.emails.send({
-          from: 'Landlife <statements@margies.app>',
+          from: 'Landlife <john@margies.app>',
           to: email,
           subject: `Landlife Statements - ${month} ${year}`,
           html: `
