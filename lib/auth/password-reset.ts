@@ -99,7 +99,7 @@ export async function sendPasswordEmail(
     : 'This link is valid for a short time. If you did not request this, you can ignore this email. Your current password stays the same until you choose a new one.'
 
   const { error: emailError } = await new Resend(resendKey).emails.send({
-    from: 'Farm Cashbook <statements@landlife.au>',
+    from: 'Farm Cashbook <statements@margies.app>',
     to: [email],
     subject,
     html: `

@@ -5,6 +5,7 @@ import { generateStatementPDF } from "@/app/utils/generateStatementPDF"
 import {
   DEFAULT_STATEMENT_EMAIL_CONTENT,
   DEFAULT_STATEMENT_EMAIL_TITLE,
+  LANDLIFE_FROM,
   STATEMENT_EMAIL_SLUG,
   statementEmailHtml,
   statementEmailSubject,
@@ -145,7 +146,7 @@ export async function sendCurrentPartyStatement(partyId: string, now = new Date(
     const values = { name, endDate: formatDisplayDate(periodEnd), amountOwed: owedLabel }
     try {
       const { error: emailError } = await resend.emails.send({
-        from: "Landlife <statements@landlife.au>",
+        from: LANDLIFE_FROM,
         to: [email],
         subject: statementEmailSubject(template.title, values),
         html: statementEmailHtml(template.content, values),

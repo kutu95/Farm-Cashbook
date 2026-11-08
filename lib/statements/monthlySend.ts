@@ -5,6 +5,7 @@ import { generateStatementPDF } from "@/app/utils/generateStatementPDF"
 import {
   DEFAULT_STATEMENT_EMAIL_CONTENT,
   DEFAULT_STATEMENT_EMAIL_TITLE,
+  LANDLIFE_FROM,
   STATEMENT_EMAIL_SLUG,
   previousMonthEnd,
   statementEmailHtml,
@@ -193,7 +194,7 @@ export async function sendMonthlyStatements(now = new Date()): Promise<MonthlySe
       })
 
       const { error: emailError } = await resend.emails.send({
-        from: "Landlife <statements@landlife.au>",
+        from: LANDLIFE_FROM,
         to: [email],
         subject: statementEmailSubject(template.title, values),
         html: statementEmailHtml(template.content, values),
