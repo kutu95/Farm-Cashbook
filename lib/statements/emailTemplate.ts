@@ -36,19 +36,31 @@ Synergy bills are in this folder: https://drive.google.com/drive/folders/1A-3aG0
 Best regards,
 Landlife`
 
-export function previousMonthEnd(now = new Date()) {
+function sydneyDateParts(now = new Date()) {
   const parts = new Intl.DateTimeFormat("en-AU", {
     timeZone: "Australia/Sydney",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
   }).formatToParts(now)
-  const year = Number(parts.find((part) => part.type === "year")?.value)
-  const month = Number(parts.find((part) => part.type === "month")?.value)
+  return {
+    year: Number(parts.find((part) => part.type === "year")?.value),
+    month: Number(parts.find((part) => part.type === "month")?.value),
+    day: Number(parts.find((part) => part.type === "day")?.value),
+  }
+}
+
+export function previousMonthEnd(now = new Date()) {
+  const { year, month } = sydneyDateParts(now)
   const end = new Date(Date.UTC(year, month - 1, 0))
   const endMonth = String(end.getUTCMonth() + 1).padStart(2, "0")
   const endDay = String(end.getUTCDate()).padStart(2, "0")
   return `${end.getUTCFullYear()}-${endMonth}-${endDay}`
+}
+
+export function sydneyToday(now = new Date()) {
+  const { year, month, day } = sydneyDateParts(now)
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`
 }
 
 export function fillStatementTemplate(template: string, values: {

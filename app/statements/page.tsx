@@ -77,6 +77,8 @@ function StatementsContent() {
   const [rawExpenses, setRawExpenses] = useState<ExpenseAllocation[]>([])
   const [rawPayments, setRawPayments] = useState<Payment[]>([])
   const [error, setError] = useState("")
+  const [notice, setNotice] = useState("")
+  const [sendingStatement, setSendingStatement] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
   const [sortAscending, setSortAscending] = useState(false)
@@ -649,6 +651,45 @@ function StatementsContent() {
     URL.revokeObjectURL(url)
   }
 
+  const emailCurrentStatement = async () => {
+    const party = parties.find((item) => item.id === partyId)
+    if (!party || sendingStatement) return
+    const confirmed = window.confirm(
+      `Email the statement through today for ${party.name} to everyone who receives that party's statements?`
+    )
+    if (!confirmed) return
+
+    setSendingStatement(true)
+    setError("")
+    setNotice("")
+    try {
+      const response = await fetch("/api/send-party-statement", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ partyId: party.id }),
+      })
+      const data = await response.json().catch(() => null)
+      if (!response.ok) {
+        throw new Error(data?.error || "Could not send the statement")
+      }
+      const sent = ((data?.sent || []) as { email: string }[]).map((row) => row.email)
+      const failed = (data?.failed || []) as { email: string; error: string }[]
+      if (sent.length > 0) {
+        setNotice(`Statement through ${formatDisplayDate(data.periodEnd)} sent to ${sent.join(", ")}.`)
+      }
+      if (failed.length > 0) {
+        setError(failed.map((row) => `${row.email}: ${row.error}`).join(" "))
+      }
+      if (sent.length === 0 && failed.length === 0) {
+        setError("Could not send the statement")
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Could not send the statement")
+    } finally {
+      setSendingStatement(false)
+    }
+  }
+
   const generateCSV = () => {
     const party = parties.find(p => p.id === partyId)
     const headers = partyId 
@@ -707,6 +748,7 @@ function StatementsContent() {
         description="Payments increase a balance. Expenses reduce it. Export is available once a party is selected."
       >
       {error && <Alert tone="error">{error}</Alert>}
+      {notice ? <Alert tone="success">{notice}</Alert> : null}
 
       {authLoading ? (
         <EmptyState title="Loading statements" />
@@ -787,6 +829,17 @@ function StatementsContent() {
                   >
                     Export CSV
                   </Button>
+                  {isAdmin ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={emailCurrentStatement}
+                      disabled={!partyId || sendingStatement}
+                      title={partyId ? "Email every transaction through today to the people subscribed to this party" : "Select a party to email"}
+                    >
+                      {sendingStatement ? "Sending..." : "Email statement"}
+                    </Button>
+                  ) : null}
                   {!partyId ? <span className="text-sm text-gray-500">Select a party to export.</span> : null}
                 </div>
               </div>
