@@ -3,8 +3,6 @@ import { Resend } from "resend"
 import { formatDisplayDate, formatMoney } from "@/lib/format"
 import { generateStatementPDF } from "@/app/utils/generateStatementPDF"
 import {
-  adminStatementHtml,
-  adminStatementSubject,
   DEFAULT_STATEMENT_EMAIL_CONTENT,
   DEFAULT_STATEMENT_EMAIL_TITLE,
   LANDLIFE_FROM,
@@ -185,15 +183,19 @@ export async function sendCurrentPartyStatement(partyId: string, now = new Date(
   return result
 }
 
-export async function sendPartyStatementToAdmin(partyId: string, adminEmail: string, now = new Date()): Promise<PartyStatementSendResult> {
+export async function sendPartyStatementToAdmin(partyId: string, adminUserId: string, adminEmail: string, now = new Date()): Promise<PartyStatementSendResult> {
   const email = adminEmail.trim()
   if (!email) throw new StatementSendError("Your account has no email address", 400)
 
   const { periodEnd, supabase, resendKey, party } = await currentPartyStatement(partyId, now)
-  const [{ data: payments, error: paymentError }, { data: allocations, error: allocationError }] = await Promise.all([
+  const [{ data: templateRow, error: templateError }, { data: profile, error: profileError }, { data: payments, error: paymentError }, { data: allocations, error: allocationError }] = await Promise.all([
+    supabase.from("pages").select("title, content").eq("slug", STATEMENT_EMAIL_SLUG).maybeSingle(),
+    supabase.from("profiles").select("full_name").eq("id", adminUserId).maybeSingle(),
     supabase.from("payments").select("amount, payment_date, description").eq("party_id", partyId).lte("payment_date", periodEnd),
     supabase.from("expense_allocations").select("allocated_amount, expense_id").eq("party_id", partyId),
   ])
+  if (templateError) throw templateError
+  if (profileError) throw profileError
   if (paymentError) throw paymentError
   if (allocationError) throw allocationError
 
@@ -204,6 +206,15 @@ export async function sendPartyStatementToAdmin(partyId: string, adminEmail: str
   if (expenseError) throw expenseError
 
   const statement = statementFile(party.name, periodEnd, payments || [], allocations || [], expenses || [])
+  const template = {
+    title: templateRow?.title || DEFAULT_STATEMENT_EMAIL_TITLE,
+    content: templateRow?.content || DEFAULT_STATEMENT_EMAIL_CONTENT,
+  }
+  const values = {
+    name: profile?.full_name?.trim() || email,
+    endDate: formatDisplayDate(periodEnd),
+    amountOwed: statement.owedLabel,
+  }
   const resend = new Resend(resendKey)
   const result: PartyStatementSendResult = {
     partyName: party.name,
@@ -215,8 +226,8 @@ export async function sendPartyStatementToAdmin(partyId: string, adminEmail: str
     const { error: emailError } = await resend.emails.send({
       from: LANDLIFE_FROM,
       to: [email],
-      subject: adminStatementSubject(party.name),
-      html: adminStatementHtml(party.name, formatDisplayDate(periodEnd)),
+      subject: statementEmailSubject(template.title, values),
+      html: statementEmailHtml(template.content, values),
       attachments: [statement.attachment],
     })
     if (emailError) throw new Error(emailError.message)

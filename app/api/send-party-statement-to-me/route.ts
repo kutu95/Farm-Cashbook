@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => null)
     const partyId = typeof body?.partyId === "string" ? body.partyId : ""
-    const result = await sendPartyStatementToAdmin(partyId, session.user.email || "")
+    const result = await sendPartyStatementToAdmin(partyId, session.user.id, session.user.email || "")
     return NextResponse.json(result)
   } catch (error) {
     if (error instanceof StatementSendError) {
