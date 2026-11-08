@@ -79,6 +79,7 @@ function StatementsContent() {
   const [error, setError] = useState("")
   const [notice, setNotice] = useState("")
   const [sendingStatement, setSendingStatement] = useState(false)
+  const [sendingCopy, setSendingCopy] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
   const [sortAscending, setSortAscending] = useState(false)
@@ -651,9 +652,32 @@ function StatementsContent() {
     URL.revokeObjectURL(url)
   }
 
+  const postStatement = async (party: Party, path: string) => {
+    const response = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ partyId: party.id }),
+    })
+    const data = await response.json().catch(() => null)
+    if (!response.ok) {
+      throw new Error(data?.error || "Could not send the statement")
+    }
+    const sent = ((data?.sent || []) as { email: string }[]).map((row) => row.email)
+    const failed = (data?.failed || []) as { email: string; error: string }[]
+    if (sent.length > 0) {
+      setNotice(`Statement through ${formatDisplayDate(data.periodEnd)} sent to ${sent.join(", ")}.`)
+    }
+    if (failed.length > 0) {
+      setError(failed.map((row) => `${row.email}: ${row.error}`).join(" "))
+    }
+    if (sent.length === 0 && failed.length === 0) {
+      setError("Could not send the statement")
+    }
+  }
+
   const emailCurrentStatement = async () => {
     const party = parties.find((item) => item.id === partyId)
-    if (!party || sendingStatement) return
+    if (!party || sendingStatement || sendingCopy) return
     const confirmed = window.confirm(
       `Email the statement through today for ${party.name} to everyone who receives that party's statements?`
     )
@@ -663,30 +687,29 @@ function StatementsContent() {
     setError("")
     setNotice("")
     try {
-      const response = await fetch("/api/send-party-statement", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ partyId: party.id }),
-      })
-      const data = await response.json().catch(() => null)
-      if (!response.ok) {
-        throw new Error(data?.error || "Could not send the statement")
-      }
-      const sent = ((data?.sent || []) as { email: string }[]).map((row) => row.email)
-      const failed = (data?.failed || []) as { email: string; error: string }[]
-      if (sent.length > 0) {
-        setNotice(`Statement through ${formatDisplayDate(data.periodEnd)} sent to ${sent.join(", ")}.`)
-      }
-      if (failed.length > 0) {
-        setError(failed.map((row) => `${row.email}: ${row.error}`).join(" "))
-      }
-      if (sent.length === 0 && failed.length === 0) {
-        setError("Could not send the statement")
-      }
+      await postStatement(party, "/api/send-party-statement")
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Could not send the statement")
     } finally {
       setSendingStatement(false)
+    }
+  }
+
+  const emailStatementToMe = async () => {
+    const party = parties.find((item) => item.id === partyId)
+    if (!party || sendingStatement || sendingCopy) return
+    const confirmed = window.confirm(`Email the current statement for ${party.name} to you?`)
+    if (!confirmed) return
+
+    setSendingCopy(true)
+    setError("")
+    setNotice("")
+    try {
+      await postStatement(party, "/api/send-party-statement-to-me")
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Could not send the statement")
+    } finally {
+      setSendingCopy(false)
     }
   }
 
@@ -830,15 +853,26 @@ function StatementsContent() {
                     Export CSV
                   </Button>
                   {isAdmin ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={emailCurrentStatement}
-                      disabled={!partyId || sendingStatement}
-                      title={partyId ? "Email every transaction through today to the people subscribed to this party" : "Select a party to email"}
-                    >
-                      {sendingStatement ? "Sending..." : "Email statement"}
-                    </Button>
+                    <>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={emailCurrentStatement}
+                        disabled={!partyId || sendingStatement || sendingCopy}
+                        title={partyId ? "Email every transaction through today to the people subscribed to this party" : "Select a party to email"}
+                      >
+                        {sendingStatement ? "Sending..." : "Email statement"}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={emailStatementToMe}
+                        disabled={!partyId || sendingStatement || sendingCopy}
+                        title={partyId ? "Email this party's current statement to yourself" : "Select a party to email"}
+                      >
+                        {sendingCopy ? "Sending..." : "Email me"}
+                      </Button>
+                    </>
                   ) : null}
                   {!partyId ? <span className="text-sm text-gray-500">Select a party to export.</span> : null}
                 </div>

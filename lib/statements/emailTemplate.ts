@@ -101,3 +101,11 @@ export function statementEmailSubject(title: string, values: {
 }) {
   return fillStatementTemplate(title, values).replace(/\s+/g, " ").trim()
 }
+
+export function adminStatementSubject(partyName: string) {
+  return `Current statement for ${partyName}`.replace(/\s+/g, " ").trim()
+}
+
+export function adminStatementHtml(partyName: string, endDate: string) {
+  return `The current statement for ${escapeHtml(partyName)}, through ${escapeHtml(endDate)}, is attached.<br><br>Best regards,<br>Landlife`
+}

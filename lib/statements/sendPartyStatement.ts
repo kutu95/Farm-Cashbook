@@ -3,6 +3,8 @@ import { Resend } from "resend"
 import { formatDisplayDate, formatMoney } from "@/lib/format"
 import { generateStatementPDF } from "@/app/utils/generateStatementPDF"
 import {
+  adminStatementHtml,
+  adminStatementSubject,
   DEFAULT_STATEMENT_EMAIL_CONTENT,
   DEFAULT_STATEMENT_EMAIL_TITLE,
   LANDLIFE_FROM,
@@ -37,7 +39,7 @@ function serviceClient() {
   return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
 }
 
-export async function sendCurrentPartyStatement(partyId: string, now = new Date()): Promise<PartyStatementSendResult> {
+async function currentPartyStatement(partyId: string, now = new Date()) {
   if (!PARTY_ID.test(partyId)) throw new StatementSendError("Choose a party", 400)
 
   const periodEnd = sydneyToday(now)
@@ -52,6 +54,60 @@ export async function sendCurrentPartyStatement(partyId: string, now = new Date(
     .maybeSingle()
   if (partyError) throw partyError
   if (!party) throw new StatementSendError("Party not found", 404)
+
+  return { periodEnd, supabase, resendKey, party }
+}
+
+function statementFile(
+  partyName: string,
+  periodEnd: string,
+  payments: { amount: number; payment_date: string; description: string | null }[],
+  allocations: { allocated_amount: number; expense_id: string }[],
+  expenses: { id: string; expense_date: string; description: string | null }[],
+) {
+  const expenseById = new Map(expenses.map((expense) => [expense.id, expense]))
+  const includedAllocations = allocations.filter((allocation) => expenseById.has(allocation.expense_id))
+  const paymentTotal = payments.reduce((sum, payment) => sum + Number(payment.amount), 0)
+  const chargeTotal = includedAllocations.reduce((sum, allocation) => sum + Number(allocation.allocated_amount), 0)
+  const balance = paymentTotal - chargeTotal
+  const owedLabel = formatMoney(balance < 0 ? -balance : 0)
+  const transactions = [
+    ...payments.map((payment) => ({
+      date: payment.payment_date,
+      description: payment.description || "Payment",
+      type: "Payment",
+      amount: Number(payment.amount),
+      sort: 0,
+    })),
+    ...includedAllocations.map((allocation) => {
+      const expense = expenseById.get(allocation.expense_id)
+      return {
+        date: expense?.expense_date || periodEnd,
+        description: expense?.description || "Expense",
+        type: "Expense",
+        amount: -Number(allocation.allocated_amount),
+        sort: 1,
+      }
+    }),
+  ].sort((a, b) => a.date.localeCompare(b.date) || a.sort - b.sort)
+  const pdf = generateStatementPDF({
+    partyName,
+    closingBalance: balance,
+    transactions: transactions.map(({ date, description, type, amount }) => ({ date, description, type, amount })),
+  })
+  const buffer = Buffer.isBuffer(pdf) ? pdf : Buffer.from(pdf)
+  const fileParty = partyName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
+  return {
+    owedLabel,
+    attachment: {
+      filename: `landlife-statement-${fileParty}-${periodEnd}.pdf`,
+      content: buffer,
+    },
+  }
+}
+
+export async function sendCurrentPartyStatement(partyId: string, now = new Date()): Promise<PartyStatementSendResult> {
+  const { periodEnd, supabase, resendKey, party } = await currentPartyStatement(partyId, now)
 
   const { data: subscriptions, error: subscriptionError } = await supabase
     .from("email_subscriptions")
@@ -81,45 +137,9 @@ export async function sendCurrentPartyStatement(partyId: string, now = new Date(
     : { data: [], error: null }
   if (expenseError) throw expenseError
 
-  const expenseById = new Map((expenses || []).map((expense) => [expense.id, expense]))
-  const includedAllocations = (allocations || []).filter((allocation) => expenseById.has(allocation.expense_id))
-  const paymentTotal = (payments || []).reduce((sum, payment) => sum + Number(payment.amount), 0)
-  const chargeTotal = includedAllocations.reduce((sum, allocation) => sum + Number(allocation.allocated_amount), 0)
-  const balance = paymentTotal - chargeTotal
-  const amountOwed = balance < 0 ? -balance : 0
-  const owedLabel = formatMoney(amountOwed)
-
-  const transactions = [
-    ...(payments || []).map((payment) => ({
-      date: payment.payment_date as string,
-      description: payment.description || "Payment",
-      type: "Payment",
-      amount: Number(payment.amount),
-      sort: 0,
-    })),
-    ...includedAllocations.map((allocation) => {
-      const expense = expenseById.get(allocation.expense_id)
-      return {
-        date: (expense?.expense_date as string) || periodEnd,
-        description: expense?.description || "Expense",
-        type: "Expense",
-        amount: -Number(allocation.allocated_amount),
-        sort: 1,
-      }
-    }),
-  ].sort((a, b) => a.date.localeCompare(b.date) || a.sort - b.sort)
-
-  const pdf = generateStatementPDF({
-    partyName: party.name,
-    closingBalance: balance,
-    transactions: transactions.map(({ date, description, type, amount }) => ({ date, description, type, amount })),
-  })
-  const buffer = Buffer.isBuffer(pdf) ? pdf : Buffer.from(pdf)
-  const fileParty = party.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
-  const attachment = {
-    filename: `landlife-statement-${fileParty}-${periodEnd}.pdf`,
-    content: buffer,
-  }
+  const statement = statementFile(party.name, periodEnd, payments || [], allocations || [], expenses || [])
+  const owedLabel = statement.owedLabel
+  const attachment = statement.attachment
 
   const template = {
     title: templateRow?.title || DEFAULT_STATEMENT_EMAIL_TITLE,
@@ -162,5 +182,50 @@ export async function sendCurrentPartyStatement(partyId: string, now = new Date(
     }
   }
 
+  return result
+}
+
+export async function sendPartyStatementToAdmin(partyId: string, adminEmail: string, now = new Date()): Promise<PartyStatementSendResult> {
+  const email = adminEmail.trim()
+  if (!email) throw new StatementSendError("Your account has no email address", 400)
+
+  const { periodEnd, supabase, resendKey, party } = await currentPartyStatement(partyId, now)
+  const [{ data: payments, error: paymentError }, { data: allocations, error: allocationError }] = await Promise.all([
+    supabase.from("payments").select("amount, payment_date, description").eq("party_id", partyId).lte("payment_date", periodEnd),
+    supabase.from("expense_allocations").select("allocated_amount, expense_id").eq("party_id", partyId),
+  ])
+  if (paymentError) throw paymentError
+  if (allocationError) throw allocationError
+
+  const expenseIds = [...new Set((allocations || []).map((row) => row.expense_id))]
+  const { data: expenses, error: expenseError } = expenseIds.length
+    ? await supabase.from("expenses").select("id, expense_date, description").in("id", expenseIds).lte("expense_date", periodEnd)
+    : { data: [], error: null }
+  if (expenseError) throw expenseError
+
+  const statement = statementFile(party.name, periodEnd, payments || [], allocations || [], expenses || [])
+  const resend = new Resend(resendKey)
+  const result: PartyStatementSendResult = {
+    partyName: party.name,
+    periodEnd,
+    sent: [],
+    failed: [],
+  }
+  try {
+    const { error: emailError } = await resend.emails.send({
+      from: LANDLIFE_FROM,
+      to: [email],
+      subject: adminStatementSubject(party.name),
+      html: adminStatementHtml(party.name, formatDisplayDate(periodEnd)),
+      attachments: [statement.attachment],
+    })
+    if (emailError) throw new Error(emailError.message)
+    result.sent.push({ email, amountOwed: statement.owedLabel })
+  } catch (error) {
+    result.failed.push({
+      email,
+      error: error instanceof Error ? error.message : "Could not send the statement",
+    })
+  }
   return result
 }
